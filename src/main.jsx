@@ -1,14 +1,21 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
-import "antd/dist/reset.css";      // ⬅️ CSS AntD
+
+/* 1) AntD reset trước */
+import "antd/dist/reset.css";
+/* 2) CSS global của bạn sau reset */
 import "./index.css";
-import App from "./App";
+
+import App from "./App.jsx";
+import { AuthProvider } from "./auth/AuthContext.jsx";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <App />
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>
 );

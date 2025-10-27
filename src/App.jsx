@@ -7,9 +7,9 @@ import Login from "./pages/auth/Login";
 import Logout from "./pages/auth/Logout";
 import Register from "./pages/auth/Register";
 import Forgot from "./pages/auth/Forgot";
-import News from "./pages/News";
 import Dashboard from "./pages/Dashboard";
 import PostListing from "./pages/PostListing";
+import ListingList from "./pages/ListingList";
 
 export default function App() {
   return (
@@ -17,7 +17,6 @@ export default function App() {
       <Header />
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/news" element={<News />} />
         <Route path="/listing/:id" element={<ListingDetail />} />
         <Route path="/login" element={<Login />} />
         <Route path="/logout" element={<Logout />} />
@@ -25,6 +24,7 @@ export default function App() {
         <Route path="/forgot" element={<Forgot />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/post" element={<PostListing />} />
+        <Route path="/listings" element={<ListingList />} />
       </Routes>
     </Layout>
   );
