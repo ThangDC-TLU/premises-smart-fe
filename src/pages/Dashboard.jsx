@@ -3,19 +3,20 @@ import {
   Tabs, Card, Row, Col, Statistic, Progress, Tag, List, Button, Space,
   Table, Typography, Popconfirm, message, Form, Input, Empty
 } from "antd";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   EyeOutlined, HeartOutlined, LikeOutlined, EditOutlined, DeleteOutlined,
   BarChartOutlined, LockOutlined
 } from "@ant-design/icons";
 import { getAllFavorites } from "../utils/favorites";
+import { useAuth } from "../auth/AuthContext";
 
 const { Title, Paragraph, Text } = Typography;
 
-/* --- Lấy role qua query: /dashboard?role=admin --- */
+/* --- Lấy role từ context --- */
 function useRole() {
-  const qs = new URLSearchParams(useLocation().search);
-  return (qs.get("role") || "user").toLowerCase(); // "user" | "admin"
+  const { user } = useAuth();
+  return String(user?.role?.name ?? user?.role ?? "user").toLowerCase();
 }
 
 /* --- Tổng quan --- */
@@ -34,9 +35,14 @@ function OverviewTab() {
         <Col xs={24} md={6}><Card><Statistic title="Yêu thích" value={metrics.totalFavorites} prefix={<HeartOutlined />} /></Card></Col>
         <Col xs={24} md={6}>
           <Card>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-              <div><div style={{ color:"#8c8c8c" }}>Tương tác</div><div style={{ fontSize:22,fontWeight:700 }}>{metrics.engagementRate}%</div></div>
-              <div style={{ width:120 }}><Progress type="circle" percent={metrics.engagementRate} size={80} /></div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ color: "#8c8c8c" }}>Tương tác</div>
+                <div style={{ fontSize: 22, fontWeight: 700 }}>{metrics.engagementRate}%</div>
+              </div>
+              <div style={{ width: 120 }}>
+                <Progress type="circle" percent={metrics.engagementRate} size={80} />
+              </div>
             </div>
           </Card>
         </Col>
@@ -46,8 +52,17 @@ function OverviewTab() {
         <List
           dataSource={recent}
           renderItem={(it) => (
-            <List.Item actions={[<span key="v"><EyeOutlined /> {it.views}</span>, <span key="l"><LikeOutlined /> {it.likes}</span>, <span key="f"><HeartOutlined /> {it.favs}</span>]}>
-              <List.Item.Meta title={<Link to={`/listing/${it.id}`}>{it.title}</Link>} description={<Text type="secondary">{it.time}</Text>} />
+            <List.Item
+              actions={[
+                <span key="v"><EyeOutlined /> {it.views}</span>,
+                <span key="l"><LikeOutlined /> {it.likes}</span>,
+                <span key="f"><HeartOutlined /> {it.favs}</span>,
+              ]}
+            >
+              <List.Item.Meta
+                title={<Link to={`/listing/${it.id}`}>{it.title}</Link>}
+                description={<Text type="secondary">{it.time}</Text>}
+              />
             </List.Item>
           )}
         />
@@ -60,8 +75,8 @@ function OverviewTab() {
 function ManagePostsTab() {
   const [data, setData] = useState([
     { id: "p01", title: "Mặt bằng Q.1 góc 2 MT", status: "Đang hiển thị", views: 523, favs: 21, createdAt: "2025-10-01" },
-    { id: "p02", title: "Văn phòng Q.3 80m²",   status: "Nháp",          views:  92, favs:  5, createdAt: "2025-10-05" },
-    { id: "p03", title: "Kho Q.7 120m²",        status: "Đang hiển thị", views: 287, favs: 11, createdAt: "2025-10-08" },
+    { id: "p02", title: "Văn phòng Q.3 80m²", status: "Nháp", views: 92, favs: 5, createdAt: "2025-10-05" },
+    { id: "p03", title: "Kho Q.7 120m²", status: "Đang hiển thị", views: 287, favs: 11, createdAt: "2025-10-08" },
   ]);
 
   const columns = [
@@ -75,11 +90,19 @@ function ManagePostsTab() {
       render: (_, r) => (
         <Space>
           <Button size="small" icon={<EditOutlined />}>Sửa</Button>
-          <Button size="small" onClick={()=>{
-            setData(ds => ds.map(x => x.id===r.id ? ({...x, status: x.status==="Đang hiển thị"?"Nháp":"Đang hiển thị"}) : x));
-            message.success("Đã chuyển trạng thái (demo)");
-          }}>{r.status==="Đang hiển thị"?"Ẩn":"Hiển thị"}</Button>
-          <Popconfirm title="Xoá bài này?" onConfirm={()=>{ setData(ds=>ds.filter(x=>x.id!==r.id)); message.success("Đã xoá (demo)"); }}>
+          <Button
+            size="small"
+            onClick={() => {
+              setData(ds => ds.map(x => x.id === r.id ? ({ ...x, status: x.status === "Đang hiển thị" ? "Nháp" : "Đang hiển thị" }) : x));
+              message.success("Đã chuyển trạng thái (demo)");
+            }}
+          >
+            {r.status === "Đang hiển thị" ? "Ẩn" : "Hiển thị"}
+          </Button>
+          <Popconfirm
+            title="Xoá bài này?"
+            onConfirm={() => { setData(ds => ds.filter(x => x.id !== r.id)); message.success("Đã xoá (demo)"); }}
+          >
             <Button danger size="small" icon={<DeleteOutlined />}>Xoá</Button>
           </Popconfirm>
         </Space>
@@ -89,7 +112,10 @@ function ManagePostsTab() {
 
   return (
     <div style={{ padding: 16 }}>
-      <Card title="Bài đăng của tôi" extra={<Button type="primary"><Link to="/post" style={{ color:"#fff" }}>Đăng bài mới</Link></Button>}>
+      <Card
+        title="Bài đăng của tôi"
+        extra={<Button type="primary"><Link to="/post" style={{ color: "#fff" }}>Đăng bài mới</Link></Button>}
+      >
         <Table rowKey="id" dataSource={data} columns={columns} pagination={{ pageSize: 5 }} />
       </Card>
     </div>
@@ -109,7 +135,10 @@ function FavoritePostsTab() {
             dataSource={favTop}
             renderItem={(it) => (
               <List.Item actions={[<Tag color="red" key="fav">❤ {it.count}</Tag>]}>
-                <List.Item.Meta title={<Link to={`/listing/${it.id}`}>Tin #{it.id}</Link>} description="(Demo) Khi nối BE sẽ hiện tiêu đề/ảnh." />
+                <List.Item.Meta
+                  title={<Link to={`/listing/${it.id}`}>Tin #{it.id}</Link>}
+                  description="(Demo) Khi nối BE sẽ hiện tiêu đề/ảnh."
+                />
               </List.Item>
             )}
           />
@@ -125,10 +154,36 @@ function ChangePasswordTab() {
   return (
     <div style={{ padding: 16 }}>
       <Card title="Đổi mật khẩu">
-        <Form form={form} layout="vertical" style={{ maxWidth: 420 }} onFinish={() => { message.success("Demo: đã cập nhật"); form.resetFields(); }}>
-          <Form.Item name="current" label="Mật khẩu hiện tại" rules={[{ required: true }]}><Input.Password prefix={<LockOutlined />} /></Form.Item>
-          <Form.Item name="next" label="Mật khẩu mới" rules={[{ required: true }, { min: 6 }]}><Input.Password prefix={<LockOutlined />} /></Form.Item>
-          <Form.Item name="confirm" label="Nhập lại" dependencies={["next"]} rules={[{ required: true }, ({getFieldValue})=>({validator(_,v){return !v||v===getFieldValue("next")?Promise.resolve():Promise.reject(new Error("Không khớp"));}})]}>
+        <Form
+          form={form}
+          layout="vertical"
+          style={{ maxWidth: 420 }}
+          onFinish={() => {
+            message.success("Demo: đã cập nhật");
+            form.resetFields();
+          }}
+        >
+          <Form.Item name="current" label="Mật khẩu hiện tại" rules={[{ required: true }]}>
+            <Input.Password prefix={<LockOutlined />} />
+          </Form.Item>
+          <Form.Item name="next" label="Mật khẩu mới" rules={[{ required: true }, { min: 6 }]}>
+            <Input.Password prefix={<LockOutlined />} />
+          </Form.Item>
+          <Form.Item
+            name="confirm"
+            label="Nhập lại"
+            dependencies={["next"]}
+            rules={[
+              { required: true },
+              ({ getFieldValue }) => ({
+                validator(_, v) {
+                  return !v || v === getFieldValue("next")
+                    ? Promise.resolve()
+                    : Promise.reject(new Error("Không khớp"));
+                },
+              }),
+            ]}
+          >
             <Input.Password prefix={<LockOutlined />} />
           </Form.Item>
           <Button type="primary" htmlType="submit">Cập nhật</Button>
@@ -140,21 +195,29 @@ function ChangePasswordTab() {
 
 /* --- Biểu đồ tổng quan (Admin) --- */
 function AdminChartsTab() {
-  const data = { posts:1245, users:892, viewsToday:15432, convRate:7.2, byType:[{type:"F&B",value:38},{type:"Văn phòng",value:27},{type:"Bán lẻ",value:22},{type:"Kho bãi",value:13}] };
+  const data = {
+    posts: 1245, users: 892, viewsToday: 15432, convRate: 7.2,
+    byType: [
+      { type: "F&B", value: 38 },
+      { type: "Văn phòng", value: 27 },
+      { type: "Bán lẻ", value: 22 },
+      { type: "Kho bãi", value: 13 },
+    ]
+  };
   return (
     <div style={{ padding: 16 }}>
-      <Row gutter={[16,16]}>
+      <Row gutter={[16, 16]}>
         <Col xs={24} md={6}><Card><Statistic title="Tổng bài đăng" value={data.posts} /></Card></Col>
         <Col xs={24} md={6}><Card><Statistic title="Người dùng" value={data.users} /></Card></Col>
         <Col xs={24} md={6}><Card><Statistic title="Lượt xem hôm nay" value={data.viewsToday} prefix={<EyeOutlined />} /></Card></Col>
         <Col xs={24} md={6}><Card><Statistic title="Tỷ lệ chuyển đổi" value={data.convRate} suffix="%" /></Card></Col>
       </Row>
       <Card title={<>Cơ cấu loại hình <Tag color="blue"><BarChartOutlined /> demo</Tag></>} style={{ marginTop: 16 }}>
-        <Row gutter={[12,12]}>
+        <Row gutter={[12, 12]}>
           {data.byType.map((b) => (
             <Col xs={24} md={12} lg={6} key={b.type}>
               <Card size="small">
-                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                   <Text strong>{b.type}</Text><Text>{b.value}%</Text>
                 </div>
                 <Progress percent={b.value} showInfo={false} />
@@ -162,12 +225,15 @@ function AdminChartsTab() {
             </Col>
           ))}
         </Row>
-        <Paragraph type="secondary" style={{ marginTop:8 }}>*Demo – khi nối Superset, nhúng iframe vào đây.</Paragraph>
+        <Paragraph type="secondary" style={{ marginTop: 8 }}>
+          *Demo – khi nối Superset, nhúng iframe vào đây.
+        </Paragraph>
       </Card>
     </div>
   );
 }
 
+/* --- Component chính --- */
 export default function Dashboard() {
   const role = useRole();
   const isAdmin = role === "admin";
@@ -175,11 +241,12 @@ export default function Dashboard() {
   const items = useMemo(() => {
     const base = [
       { key: "overview", label: "Tổng quan", children: <OverviewTab /> },
-      { key: "manage",   label: "Quản lý bài đăng", children: <ManagePostsTab /> },
-      { key: "fav",      label: "Bài viết yêu thích", children: <FavoritePostsTab /> },
-      { key: "pwd",      label: "Đổi mật khẩu", children: <ChangePasswordTab /> },
+      { key: "manage", label: "Quản lý bài đăng", children: <ManagePostsTab /> },
+      { key: "fav", label: "Bài viết yêu thích", children: <FavoritePostsTab /> },
+      { key: "pwd", label: "Đổi mật khẩu", children: <ChangePasswordTab /> },
     ];
-    if (isAdmin) base.unshift({ key: "charts", label: "Biểu đồ tổng quan (Admin)", children: <AdminChartsTab /> });
+    if (isAdmin)
+      base.unshift({ key: "charts", label: "Biểu đồ tổng quan (Admin)", children: <AdminChartsTab /> });
     return base;
   }, [isAdmin]);
 
