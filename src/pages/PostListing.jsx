@@ -1,39 +1,57 @@
-import { useState } from "react";
+// src/pages/PostListing.jsx
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Card, Steps, Form, Input, InputNumber, Select, Button, Row, Col,
   Upload, message, Typography, Space, Tag
 } from "antd";
 import { PlusOutlined, EnvironmentOutlined } from "@ant-design/icons";
+import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
+import L from "leaflet";
+import api from "../api/client"; // axios instance (baseURL = /api)
 
 const { Title, Paragraph, Text } = Typography;
+
+// --- Marker icon cho Leaflet (fix khi dùng bundler) ---
+const markerIcon = new L.Icon({
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+// --- Fly map tới vị trí mới ---
+function FlyTo({ latlng }) {
+  const map = useMap();
+  useEffect(() => {
+    if (latlng) map.flyTo(latlng, 16, { duration: 0.7 });
+  }, [latlng]);
+  return null;
+}
+
+// --- Geocode bằng Nominatim (OpenStreetMap) ---
+async function geocodeAddress(fullAddress) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+    fullAddress
+  )}&addressdetails=1&limit=1`;
+  const res = await fetch(url, { headers: { "Accept-Language": "vi" } });
+  if (!res.ok) throw new Error("Không geocode được địa chỉ");
+  const data = await res.json();
+  if (!data?.length) throw new Error("Không tìm thấy vị trí phù hợp");
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+}
 
 export default function PostListing() {
   const [step, setStep] = useState(0);
   const [form] = Form.useForm();
   const [fileList, setFileList] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
 
-  const next = async () => {
-    try {
-      await form.validateFields(step === 0 ? ["title","price","area_m2","businessType"] :
-                                step === 1 ? ["address","district","city"] : []);
-      setStep((s) => s + 1);
-    } catch {}
-  };
-  const prev = () => setStep((s) => s - 1);
-
-  const submit = async () => {
-    try {
-      await form.validateFields();
-      const values = form.getFieldsValue(true);
-      // Demo UI: chỉ hiển thị thông báo
-      console.log("POST DATA", { ...values, images: fileList.map(f=>f.name) });
-      message.success("(Demo) Đã gửi dữ liệu đăng tin!");
-    } catch {}
-  };
-
-  const customUpload = ({ onSuccess }) => {
-    setTimeout(() => onSuccess("ok"), 400); // giả lập upload thành công
-  };
+  // Location state
+  const [latLng, setLatLng] = useState(null); // {lat,lng}
+  const lastQueryRef = useRef("");
 
   const steps = [
     { title: "Thông tin cơ bản" },
@@ -42,7 +60,99 @@ export default function PostListing() {
     { title: "Xem trước & đăng" },
   ];
 
+  // Cho phép quay lại step vị trí vẫn giữ marker
+  useEffect(() => {
+    const lat = form.getFieldValue("lat");
+    const lng = form.getFieldValue("lng");
+    if (lat && lng) setLatLng({ lat: Number(lat), lng: Number(lng) });
+  }, []);
+
+  const next = async () => {
+    try {
+      if (step === 0) await form.validateFields(["title", "price", "area_m2", "businessType"]);
+      else if (step === 1) {
+        await form.validateFields(["address", "district", "city"]);
+        const lt = form.getFieldValue("lat");
+        const lg = form.getFieldValue("lng");
+        if (!lt || !lg) {
+          message.warning("Hãy bấm 'Tìm vị trí' và đặt marker trên bản đồ.");
+          return;
+        }
+      }
+      setStep((s) => s + 1);
+    } catch {}
+  };
+  const prev = () => setStep((s) => s - 1);
+
+  const customUpload = ({ onSuccess }) => setTimeout(() => onSuccess("ok"), 350); // demo
+
+  const handleSearch = async () => {
+    const addr = form.getFieldValue("address")?.trim();
+    const district = form.getFieldValue("district")?.trim();
+    const city = form.getFieldValue("city")?.trim();
+    if (!addr || !district || !city) {
+      message.warning("Nhập đủ Địa chỉ, Quận/Huyện, Tỉnh/Thành phố");
+      return;
+    }
+    const full = `${addr}, ${district}, ${city}`;
+    if (lastQueryRef.current === full && latLng) return; // tránh gọi lại
+    try {
+      const pos = await geocodeAddress(full);
+      setLatLng(pos);
+      form.setFieldsValue({ lat: pos.lat, lng: pos.lng });
+      lastQueryRef.current = full;
+      message.success("Đã xác định vị trí");
+    } catch (e) {
+      message.error(e.message || "Geocode thất bại");
+    }
+  };
+
+  const onMarkerDragEnd = (e) => {
+    const m = e.target.getLatLng();
+    const pos = { lat: m.lat, lng: m.lng };
+    setLatLng(pos);
+    form.setFieldsValue(pos);
+  };
+
+  const submit = async () => {
+    try {
+      await form.validateFields();
+      const values = form.getFieldsValue(true);
+
+      // Chuẩn bị payload — minh hoạ. Tùy BE mà đổi field cho khớp.
+      const payload = {
+        title: values.title,
+        description: values.description || "",
+        price: Number(values.price),
+        areaM2: Number(values.area_m2),
+        businessType: values.businessType, // fnb/office/retail/warehouse
+        address: values.address,
+        district: values.district,
+        city: values.city,
+        latitude: values.lat,
+        longitude: values.lng,
+        images: fileList.map((f) => f.name), // demo (thực tế cần upload & lấy URL)
+      };
+
+      setSubmitting(true);
+      // Demo: in log. Khi nối BE, bật dòng dưới:
+      // await api.post("/premises", payload);
+      console.log("POST DATA", payload);
+
+      message.success("Đã gửi dữ liệu đăng tin!");
+      setStep(0);
+      form.resetFields();
+      setLatLng(null);
+      setFileList([]);
+    } catch (e) {
+      // antd đã hiển thị lỗi validate
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const values = form.getFieldsValue(true);
+  const center = useMemo(() => latLng || { lat: 21.0278, lng: 105.8342 }, [latLng]); // default Hà Nội
 
   return (
     <div style={{ maxWidth: 1000, margin: "16px auto", padding: "0 16px" }}>
@@ -66,8 +176,8 @@ export default function PostListing() {
                     style={{ width: "100%" }}
                     min={0}
                     step={500000}
-                    formatter={(v)=> v && `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                    parser={(v)=> v.replace(/\D/g,"")}
+                    formatter={(v) => v && `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                    parser={(v) => (v || "").replace(/\D/g, "")}
                   />
                 </Form.Item>
               </Col>
@@ -118,33 +228,46 @@ export default function PostListing() {
               </Col>
             </Row>
 
-            <Row gutter={12}>
-              <Col xs={24} md={8}>
-                <Form.Item label="Kinh độ (lng)" name="lng">
-                  <Input placeholder="VD: 106.7" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={8}>
-                <Form.Item label="Vĩ độ (lat)" name="lat">
-                  <Input placeholder="VD: 10.77" />
-                </Form.Item>
-              </Col>
-            </Row>
+            <Space>
+              <Button type="primary" onClick={handleSearch} icon={<EnvironmentOutlined />}>
+                Tìm vị trí
+              </Button>
+              <Text type="secondary">Kéo marker để tinh chỉnh tọa độ.</Text>
+            </Space>
 
-            {/* Map giả lập */}
-            <Card
-              type="inner"
-              title={<Space><EnvironmentOutlined />Vị trí trên bản đồ (minh họa)</Space>}
-              style={{ marginTop: 8 }}
-            >
-              <img
-                src="https://tile.openstreetmap.org/12/3300/2150.png"
-                alt="map"
-                style={{ width: "100%", height: 260, objectFit: "cover", borderRadius: 8 }}
-              />
-              <Paragraph type="secondary" style={{ marginTop: 6 }}>
-                *Sau này tích hợp bản đồ (Leaflet/Google Maps) để chọn tọa độ trực tiếp.
-              </Paragraph>
+            <Card type="inner" title="Vị trí trên bản đồ" style={{ marginTop: 8 }}>
+              <div style={{ height: 360, borderRadius: 8, overflow: "hidden" }}>
+                <MapContainer center={center} zoom={latLng ? 16 : 12} style={{ height: "100%", width: "100%" }}>
+                  <TileLayer
+                    attribution="&copy; OpenStreetMap"
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  {latLng && (
+                    <>
+                      <FlyTo latlng={latLng} />
+                      <Marker
+                        position={latLng}
+                        draggable
+                        eventHandlers={{ dragend: onMarkerDragEnd }}
+                        icon={markerIcon}
+                      />
+                    </>
+                  )}
+                </MapContainer>
+              </div>
+
+              <Row gutter={12} style={{ marginTop: 12 }}>
+                <Col xs={24} md={8}>
+                  <Form.Item label="Lat" name="lat">
+                    <Input readOnly />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item label="Lng" name="lng">
+                    <Input readOnly />
+                  </Form.Item>
+                </Col>
+              </Row>
             </Card>
           </Form>
         )}
@@ -208,7 +331,7 @@ export default function PostListing() {
           {step < steps.length - 1 ? (
             <Button type="primary" onClick={next}>Tiếp tục</Button>
           ) : (
-            <Button type="primary" onClick={submit}>Đăng tin</Button>
+            <Button type="primary" loading={submitting} onClick={submit}>Đăng tin</Button>
           )}
         </div>
       </Card>

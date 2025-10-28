@@ -4,7 +4,6 @@ import Header from "./components/Header";
 import Home from "./pages/Home";
 import ListingDetail from "./pages/ListingDetail";
 import Login from "./pages/auth/Login";
-import Logout from "./pages/auth/Logout";
 import Register from "./pages/auth/Register";
 import Forgot from "./pages/auth/Forgot";
 import Dashboard from "./pages/Dashboard";
@@ -19,7 +18,6 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/listing/:id" element={<ListingDetail />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/logout" element={<Logout />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot" element={<Forgot />} />
         <Route path="/dashboard" element={<Dashboard />} />
