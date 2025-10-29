@@ -18,6 +18,28 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
 const PLACEHOLDER_IMG = "https://picsum.photos/seed/premise/900/600";
 const TYPE_LABEL = { fnb: "F&B", retail: "Bán lẻ", office: "Văn phòng", warehouse: "Kho" };
 
+// Gọi API đổi mật khẩu (JWT)
+async function changePasswordAPI(token, { oldPassword, newPassword }) {
+  const res = await fetch(`${API_BASE}/auth/change-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,      // ✅ gửi JWT
+    },
+    body: JSON.stringify({ oldPassword, newPassword }),
+  });
+
+  // BE trả 200 OK (text hoặc json). Trả lỗi có status ≠ 200
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(txt || `Đổi mật khẩu thất bại (${res.status})`);
+  }
+  // Trả về message (nếu có)
+  const ct = res.headers.get("content-type") || "";
+  return ct.includes("application/json") ? res.json() : res.text();
+}
+
+
 /* --- Lấy role từ context --- */
 function useRole() {
   const { user } = useAuth();
@@ -238,26 +260,49 @@ function FavoritePostsTab() {
 }
 
 /* --- Đổi mật khẩu --- */
+/* --- Đổi mật khẩu --- */
 function ChangePasswordTab() {
   const [form] = Form.useForm();
-  return (
+  const { token } = useAuth() || {};
+  const [loading, setLoading] = useState(false);
+
+  const onFinish = async (vals) => {
+    if (!token) {
+      message.error("Bạn cần đăng nhập lại (thiếu token).");
+      return;
+    }
+    if (vals.next !== vals.confirm) {
+      message.warning("Mật khẩu nhập lại không khớp.");
+      return;
+    }
+    try {
+      setLoading(true);
+      await changePasswordAPI(token, {
+        oldPassword: vals.current,
+        newPassword: vals.next,
+      });
+      message.success("Đổi mật khẩu thành công!");
+      form.resetFields();
+    } catch (e) {
+      // Một số thông điệp phổ biến từ BE: 401 sai mật khẩu cũ, 404 không tìm thấy user
+      message.error(e.message || "Đổi mật khẩu thất bại");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+ return (
     <div style={{ padding: 16 }}>
       <Card title="Đổi mật khẩu">
-        <Form
-          form={form}
-          layout="vertical"
-          style={{ maxWidth: 420 }}
-          onFinish={() => {
-            message.success("Demo: đã cập nhật");
-            form.resetFields();
-          }}
-        >
+        <Form form={form} layout="vertical" style={{ maxWidth: 420 }} onFinish={onFinish}>
           <Form.Item name="current" label="Mật khẩu hiện tại" rules={[{ required: true }]}>
             <Input.Password prefix={<LockOutlined />} />
           </Form.Item>
+
           <Form.Item name="next" label="Mật khẩu mới" rules={[{ required: true }, { min: 6 }]}>
             <Input.Password prefix={<LockOutlined />} />
           </Form.Item>
+
           <Form.Item
             name="confirm"
             label="Nhập lại"
@@ -275,12 +320,14 @@ function ChangePasswordTab() {
           >
             <Input.Password prefix={<LockOutlined />} />
           </Form.Item>
-          <Button type="primary" htmlType="submit">Cập nhật</Button>
+
+          <Button type="primary" htmlType="submit" loading={loading}>Cập nhật</Button>
         </Form>
       </Card>
     </div>
   );
 }
+
 
 /* --- Biểu đồ tổng quan (Admin) --- */
 function AdminChartsTab() {
