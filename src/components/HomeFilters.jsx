@@ -57,12 +57,6 @@ export default function HomeFilters({ onSearch }) {
           <Option value="500">500 m²</Option>
         </Select></Col>
       </Row>
-
-      {/* Banner bản đồ */}
-      <div className="map-banner">
-        <img src="https://tile.openstreetmap.org/12/3300/2150.png" alt="map" />
-        <button className="map-banner__cta">Bấm vào đây để tìm kiếm chi tiết trên bản đồ</button>
-      </div>
     </div>
   );
 }

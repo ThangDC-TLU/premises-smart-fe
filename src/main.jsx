@@ -1,22 +1,22 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
-import "leaflet/dist/leaflet.css";
-
-/* 1) AntD reset trước */
+import { ConfigProvider, App as AntApp } from "antd";
+import viVN from "antd/locale/vi_VN";
 import "antd/dist/reset.css";
-/* 2) CSS global của bạn sau reset */
-import "./index.css";
-
-import App from "./App.jsx";
-import { AuthProvider } from "./auth/AuthContext.jsx";
+import { BrowserRouter } from "react-router-dom";
+import { AuthProvider } from "./auth/AuthContext";
+import App from "./App";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
+    <ConfigProvider locale={viVN}>
+      <AntApp>
+        <AuthProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </AuthProvider>
+      </AntApp>
+    </ConfigProvider>
   </React.StrictMode>
 );

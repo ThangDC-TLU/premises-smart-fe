@@ -13,13 +13,17 @@ export default function Header() {
   const { user, logout } = useAuth();
 
   // xác định tab active trên menu
-  const activeKey = pathname.startsWith("/listings") ? "listings" : "home";
+  const activeKey = pathname.startsWith("/listings")
+    ? "listings"
+    : pathname.startsWith("/map")
+    ? "map"
+    : "home";
 
   // tên hiển thị ưu tiên fullName > name > email
   const displayName =
     user?.fullName || user?.name || (user?.email ? user.email.split("@")[0] : "");
 
-  // hàm điều hướng tới dashboard (nếu admin thì thêm query)
+  // điều hướng tới dashboard (nếu admin thì thêm query)
   const goToDashboard = () => {
     if (!user) return;
     const roleParam = user?.role === "admin" ? "?role=admin" : "";
@@ -107,6 +111,7 @@ export default function Header() {
           items={[
             { key: "home", label: <Link to="/">Trang chủ</Link> },
             { key: "listings", label: <Link to="/listings">Danh sách</Link> },
+            { key: "map", label: <Link to="/map">Map</Link> }, // 👈 thêm menu Map
           ]}
         />
 

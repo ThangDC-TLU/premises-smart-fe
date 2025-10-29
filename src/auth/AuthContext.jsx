@@ -1,6 +1,6 @@
 // src/auth/AuthContext.jsx
 import { createContext, useContext, useEffect, useState } from "react";
-import api from "../api/client"; // axios instance có baseURL & interceptor
+import { loginApi, registerApi } from "../api/auth";
 
 const AuthContext = createContext(null);
 const LS_USER = "ps_user";
@@ -13,55 +13,56 @@ export function AuthProvider({ children }) {
 
   // Load từ localStorage khi mở app
   useEffect(() => {
-    const rawUser = localStorage.getItem(LS_USER);
-    const rawToken = localStorage.getItem(LS_TOKEN);
-    if (rawUser && rawToken) {
-      try {
+    try {
+      const rawUser = localStorage.getItem(LS_USER);
+      const rawToken = localStorage.getItem(LS_TOKEN);
+      if (rawUser && rawToken) {
         setUser(JSON.parse(rawUser));
         setToken(rawToken);
-      } catch (_) {
-        localStorage.removeItem(LS_USER);
-        localStorage.removeItem(LS_TOKEN);
       }
+    } catch {
+      localStorage.removeItem(LS_USER);
+      localStorage.removeItem(LS_TOKEN);
     }
   }, []);
 
-  // Đăng nhập -> gọi BE /api/auth/login
+  // Helper: set vào localStorage & state
+  const persistAuth = (accessToken, userObj) => {
+    localStorage.setItem(LS_TOKEN, accessToken);
+    localStorage.setItem(LS_USER, JSON.stringify(userObj));
+    setToken(accessToken);
+    setUser(userObj);
+  };
+
+  // Đăng nhập -> gọi API
   const login = async (email, password) => {
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/login", { email, password });
-      // backend trả { access_token, user }
-      localStorage.setItem(LS_TOKEN, data.access_token);
-      localStorage.setItem(LS_USER, JSON.stringify(data.user));
-      setToken(data.access_token);
-      setUser(data.user);
+      const data = await loginApi({ email, password }); // { access_token, user }
+      persistAuth(data.access_token, data.user);
       return { ok: true, user: data.user };
     } catch (err) {
-      const msg = err?.response?.data || "Đăng nhập thất bại";
-      return { ok: false, error: msg };
+      // err là Error(message) đã chuẩn hoá từ loginApi
+      return { ok: false, error: err.message || "Đăng nhập thất bại" };
     } finally {
       setLoading(false);
     }
   };
 
-  // Đăng ký -> gọi BE /api/auth/register
+  // Đăng ký -> gọi API
   const register = async ({ fullName, email, phone, password }) => {
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/register", {
-        fullName, email, phone, password,
-      });
-      // Tùy BE, có thể chỉ trả message. Ở đây trả về để UI hiển thị.
+      const data = await registerApi({ email, password, fullName, phone });
       return { ok: true, data };
     } catch (err) {
-      const msg = err?.response?.data || "Đăng ký thất bại";
-      return { ok: false, error: msg };
+      return { ok: false, error: err.message || "Đăng ký thất bại" };
     } finally {
       setLoading(false);
     }
   };
 
+  // Đăng xuất
   const logout = () => {
     localStorage.removeItem(LS_USER);
     localStorage.removeItem(LS_TOKEN);
@@ -71,7 +72,15 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, login, register, logout, isAuthenticated: !!token }}
+      value={{
+        user,
+        token,
+        loading,
+        login,
+        register,
+        logout,
+        isAuthenticated: !!token,
+      }}
     >
       {children}
     </AuthContext.Provider>

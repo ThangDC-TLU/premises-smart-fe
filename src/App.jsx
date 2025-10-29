@@ -9,6 +9,7 @@ import Forgot from "./pages/auth/Forgot";
 import Dashboard from "./pages/Dashboard";
 import PostListing from "./pages/PostListing";
 import ListingList from "./pages/ListingList";
+import MapPage from "./pages/MapPage"; 
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/post" element={<PostListing />} />
         <Route path="/listings" element={<ListingList />} />
+        <Route path="/map" element={<MapPage />} />
       </Routes>
     </Layout>
   );

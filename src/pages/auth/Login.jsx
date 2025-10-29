@@ -1,30 +1,48 @@
 import { useState } from "react";
-import { Card, Form, Input, Button, Checkbox, Typography, message } from "antd";
+import { Card, Form, Input, Button, Checkbox, Typography, App } from "antd";
 import { MailOutlined, LockOutlined } from "@ant-design/icons";
-import { useAuth } from "../../auth/AuthContext"; // đường dẫn tùy cấu trúc của bạn
+import { useAuth } from "../../auth/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 
 export default function Login() {
   const [form] = Form.useForm();
   const nav = useNavigate();
-  const { login, loading } = useAuth(); // login(email, password) -> { ok, error }
+  const { login, loading } = useAuth();
   const [submitting, setSubmitting] = useState(false);
+  // Lấy instance message từ Provider, ĐỔI TÊN để tránh đụng
+  const { message: msg } = App.useApp();
+
+  const pickError = (errLike) => {
+    if (!errLike) return "Đăng nhập thất bại";
+    if (typeof errLike === "string") return errLike;
+    if (typeof errLike?.message === "string" && errLike.message.trim()) return errLike.message.trim();
+    return "Đăng nhập thất bại";
+  };
 
   const onFinish = async (values) => {
     const { email, password } = values || {};
     setSubmitting(true);
-    const res = await login(email, password);
-    setSubmitting(false);
+    try {
+      const res = await login(email, password);
+      if (res?.ok) {
+        await msg.success("Đăng nhập thành công!", 1.2);
+        nav("/", { replace: true });
+      } else {
+        const errText = pickError(res?.error);
+        msg.error(errText);
+        form.setFieldsValue({ password: "" });
+      }
+    } catch (e) {
+      msg.error(pickError(e));
+      form.setFieldsValue({ password: "" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-    if (res.ok) {
-      message.success("Đăng nhập thành công!");
-      nav("/", { replace: true });
-    } else {
-      const err =
-        typeof res.error === "string"
-          ? res.error
-          : res.error?.message || "Đăng nhập thất bại";
-      message.error(err);
+  const onFinishFailed = ({ errorFields }) => {
+    if (errorFields?.length) {
+      msg.error(errorFields[0]?.errors?.[0] || "Vui lòng kiểm tra thông tin");
     }
   };
 
@@ -39,7 +57,9 @@ export default function Login() {
           form={form}
           layout="vertical"
           onFinish={onFinish}
+          onFinishFailed={onFinishFailed}
           initialValues={{ remember: true }}
+          autoComplete="on"
         >
           <Form.Item
             label="Email"
@@ -49,11 +69,7 @@ export default function Login() {
               { type: "email", message: "Email không hợp lệ" },
             ]}
           >
-            <Input
-              prefix={<MailOutlined />}
-              placeholder="you@example.com"
-              autoComplete="email"
-            />
+            <Input prefix={<MailOutlined />} placeholder="you@example.com" autoComplete="email" allowClear />
           </Form.Item>
 
           <Form.Item
@@ -65,6 +81,7 @@ export default function Login() {
               prefix={<LockOutlined />}
               placeholder="••••••••"
               autoComplete="current-password"
+              visibilityToggle
             />
           </Form.Item>
 
@@ -75,12 +92,7 @@ export default function Login() {
             <Link to="/forgot">Quên mật khẩu?</Link>
           </div>
 
-          <Button
-            type="primary"
-            htmlType="submit"
-            block
-            loading={loading || submitting}
-          >
+          <Button type="primary" htmlType="submit" block loading={loading || submitting} disabled={loading || submitting}>
             Đăng nhập
           </Button>
 
