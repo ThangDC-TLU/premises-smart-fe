@@ -10,19 +10,41 @@ import { Link } from "react-router-dom";
 const { Title, Text } = Typography;
 
 const PLACEHOLDER_IMG = "https://picsum.photos/seed/premise/900/600";
-const TYPE_LABEL = { fnb: "F&B", retail: "Bán lẻ", office: "Văn phòng" };
+const TYPE_LABEL = { fnb: "F&B", retail: "Bán lẻ", office: "Văn phòng", warehouse: "Kho" };
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
 
 const fmtVND = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const currency = (n) => fmtVND.format(Number(n) || 0).replace("₫", "đ/tháng");
 
-export default function ListingGrid({ pageSize = 12, title = "Cho thuê mặt bằng kinh doanh" }) {
+/**
+ * ListingGrid
+ * - Nếu props.items có mặt: dùng luôn dữ liệu này (đã được parent lọc/mapping)
+ * - Nếu props.items không có: tự fetch từ API /premises và tự map hiển thị
+ */
+export default function ListingGrid({
+  items: itemsProp,       // <-- danh sách đã lọc từ Home (tuỳ chọn)
+  pageSize = 12,
+  title = "Cho thuê mặt bằng kinh doanh",
+}) {
   const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!Array.isArray(itemsProp));
   const [err, setErr] = useState(null);
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(Array.isArray(itemsProp) ? itemsProp : []);
 
+  // Khi parent truyền items → dùng luôn và tắt loading
   useEffect(() => {
+    if (Array.isArray(itemsProp)) {
+      setItems(itemsProp);
+      setLoading(false);
+      setErr(null);
+      setPage(1); // reset về trang 1 khi danh sách thay đổi
+    }
+  }, [itemsProp]);
+
+  // Chỉ fetch khi không có itemsProp
+  useEffect(() => {
+    if (Array.isArray(itemsProp)) return; // đã có dữ liệu từ parent
+
     let aborted = false;
     const ctrl = new AbortController();
 
@@ -33,13 +55,12 @@ export default function ListingGrid({ pageSize = 12, title = "Cho thuê mặt b�
         const res = await fetch(`${API_BASE}/premises`, {
           signal: ctrl.signal,
           headers: { Accept: "application/json" },
-          // credentials: "include", // bật nếu bạn dùng session cookie
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
 
         const mapped = (Array.isArray(json) ? json : []).map((p) => {
-          const typeKey = (p.businessType || "").toString().toLowerCase().trim(); // fnb|retail|office
+          const typeKey = (p.businessType || "").toString().toLowerCase().trim();
           const businessType = TYPE_LABEL[typeKey] || p.businessType || "Khác";
           const cover = p.coverImage || (Array.isArray(p.images) && p.images[0]) || PLACEHOLDER_IMG;
           return {
@@ -47,13 +68,16 @@ export default function ListingGrid({ pageSize = 12, title = "Cho thuê mặt b�
             title: p.title || "Không có tiêu đề",
             price: Number(p.price) || 0,
             area_m2: Number(p.areaM2) || 0,
-            businessType,
+            businessType,                 // label hiển thị
             address: p.locationText || "",
             img: cover,
           };
         });
 
-        if (!aborted) setItems(mapped);
+        if (!aborted) {
+          setItems(mapped);
+          setPage(1);
+        }
       } catch (e) {
         if (!aborted) {
           setErr(e.message || "Fetch error");
@@ -69,7 +93,7 @@ export default function ListingGrid({ pageSize = 12, title = "Cho thuê mặt b�
       aborted = true;
       ctrl.abort();
     };
-  }, []);
+  }, [itemsProp]);
 
   const total = items.length;
   const pageData = useMemo(
@@ -97,7 +121,7 @@ export default function ListingGrid({ pageSize = 12, title = "Cho thuê mặt b�
       ) : err ? (
         <Empty description="Không thể tải dữ liệu từ API" style={{ marginTop: 24 }} />
       ) : total === 0 ? (
-        <Empty description="Chưa có kết quả" style={{ marginTop: 24 }} />
+        <Empty description="Không có kết quả phù hợp" style={{ marginTop: 24 }} />
       ) : (
         <>
           <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
@@ -133,7 +157,8 @@ export default function ListingGrid({ pageSize = 12, title = "Cho thuê mặt b�
                   <Space wrap size="small" style={{ marginBottom: 6 }}>
                     <Tag color="red">{currency(it.price)}</Tag>
                     <Tag icon={<AreaChartOutlined />}>{it.area_m2} m²</Tag>
-                    <Tag>{it.businessType}</Tag>
+                    {/* Nếu parent đã cung cấp label rồi thì dùng luôn */}
+                    <Tag>{TYPE_LABEL[it.businessType] || it.businessType}</Tag>
                   </Space>
 
                   <div style={{ color: "#8c8c8c" }}>
