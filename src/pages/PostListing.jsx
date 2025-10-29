@@ -8,7 +8,6 @@ import { PlusOutlined, EnvironmentOutlined, InfoCircleOutlined } from "@ant-desi
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { createPremises } from "../api/premises";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 const { Title, Paragraph, Text } = Typography;
@@ -48,16 +47,20 @@ async function uploadToCloudinary(fileLike) {
   return data.secure_url;
 }
 
-const cloudinaryRequest = async ({ file, onSuccess, onError, onProgress }) => {
-  try {
-    onProgress?.({ percent: 20 });
-    const secureUrl = await uploadToCloudinary(file);
-    onProgress?.({ percent: 100 });
-    onSuccess?.({ url: secureUrl, secure_url: secureUrl }, file);
-  } catch (e) {
-    onError?.(e);
-    message.error(e.message || "Upload ảnh thất bại");
-  }
+/** customRequest có truyền messageApi để báo trạng thái */
+const makeCloudinaryRequest = (notify) => {
+  return async ({ file, onSuccess, onError, onProgress }) => {
+    try {
+      onProgress?.({ percent: 20 });
+      const secureUrl = await uploadToCloudinary(file);
+      onProgress?.({ percent: 100 });
+      onSuccess?.({ url: secureUrl, secure_url: secureUrl }, file);
+      notify?.success?.("Tải ảnh thành công");
+    } catch (e) {
+      onError?.(e);
+      notify?.error?.(e?.message || "Upload ảnh thất bại");
+    }
+  };
 };
 
 /* ======================
@@ -143,9 +146,7 @@ async function geocodeAddressSmart(rawQuery) {
 
       const top = sorted[0];
       if (top) return { lat: parseFloat(top.lat), lng: parseFloat(top.lon), raw: top };
-    } catch {
-      // thử biến thể tiếp theo
-    }
+    } catch {}
   }
   throw new Error("Không tìm thấy vị trí phù hợp. Hãy nhập 'Số nhà, Đường, Huyện/Quận, Tỉnh/TP, Việt Nam'.");
 }
@@ -165,6 +166,7 @@ const LABEL_TO_KEY = {
    Component
 ====================== */
 export default function PostListing() {
+  const [messageApi, contextHolder] = message.useMessage(); // ✅ hook message
   const [step, setStep] = useState(0);
   const [form] = Form.useForm();
   const [fileList, setFileList] = useState([]);
@@ -187,7 +189,10 @@ export default function PostListing() {
     { title: "Xem trước & " + (isEdit ? "cập nhật" : "đăng") },
   ];
 
-  // load detail when editing
+  // customRequest với messageApi
+  const cloudReq = useMemo(() => makeCloudinaryRequest(messageApi), [messageApi]);
+
+  // load detail khi edit
   useEffect(() => {
     if (!isEdit) return;
     let aborted = false;
@@ -197,19 +202,15 @@ export default function PostListing() {
         const res = await fetch(`${API_BASE}/premises/${editId}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const d = await res.json();
-        // d = ListingDetailDTO
         const key = LABEL_TO_KEY[String(d.businessType || "").toLowerCase().trim()] || d.businessType || "fnb";
 
-        // build fileList from images; put cover first
         const imgs = Array.isArray(d.images) ? d.images : [];
         const fl = imgs.map((url, i) => ({ uid: `${i}-${url}`, name: `img-${i}`, status: "done", url }));
         const cv = d.coverImage || fl[0]?.url || null;
         if (cv) fl.sort((a, b) => (a.url === cv ? -1 : b.url === cv ? 1 : 0));
 
-        // set form fields
         if (!aborted) {
           setFileList(fl);
-          // prefer server lat/lng; if null, try to geocode address later if needed
           const lat = d.latitude ?? null;
           const lng = d.longitude ?? null;
           if (lat && lng) setLatLng({ lat, lng });
@@ -217,41 +218,40 @@ export default function PostListing() {
           form.setFieldsValue({
             title: d.title,
             price: d.price,
-            area_m2: d.area_m2,            // DTO dùng area_m2
+            area_m2: d.area_m2,
             businessType: key,
             description: d.description,
-            locationText: d.address || "", // dùng cho search & submit
-            locationQuery: d.address || "",// để hiển thị trong input tìm
+            locationText: d.address || "",
+            locationQuery: d.address || "",
             lat: lat ?? undefined,
             lng: lng ?? undefined,
           });
         }
       } catch (e) {
-        message.error("Không tải được dữ liệu tin cần sửa.");
+        messageApi.error("Không tải được dữ liệu tin cần sửa.");
       } finally {
         if (!aborted) setLoadingDetail(false);
       }
     })();
     return () => (aborted = true);
-  }, [isEdit, editId, form]);
+  }, [isEdit, editId, form, messageApi]);
 
   useEffect(() => {
     const lat = form.getFieldValue("lat");
     const lng = form.getFieldValue("lng");
     if (lat && lng) setLatLng({ lat: Number(lat), lng: Number(lng) });
-  }, []); // giữ marker khi quay lại
+  }, []);
 
   const next = async () => {
     try {
       if (step === 0) {
         await form.validateFields(["title", "price", "area_m2", "businessType"]);
       } else if (step === 1) {
-        // dùng locationText để submit và geocode
         await form.validateFields(["locationText"]);
         const lt = form.getFieldValue("lat");
         const lg = form.getFieldValue("lng");
         if (!lt || !lg) {
-          message.warning("Hãy bấm 'Tìm vị trí' và đặt marker trên bản đồ.");
+          messageApi.warning("Hãy bấm 'Tìm vị trí' và đặt marker trên bản đồ.");
           return;
         }
       }
@@ -261,9 +261,9 @@ export default function PostListing() {
   const prev = () => setStep((s) => s - 1);
 
   const handleSearch = async () => {
-    const q = (form.getFieldValue("locationText") || "").trim(); // dùng locationText
+    const q = (form.getFieldValue("locationText") || "").trim();
     if (q.length < 3) {
-      message.info("Nhập địa chỉ rõ hơn (vd: 'Phú Mỹ, Xuân Lộc, Hậu Lộc, Thanh Hóa').");
+      messageApi.info("Nhập địa chỉ rõ hơn (vd: 'Phú Mỹ, Xuân Lộc, Hậu Lộc, Thanh Hóa').");
       return;
     }
     if (lastQueryRef.current === q && latLng) return;
@@ -274,9 +274,9 @@ export default function PostListing() {
       setLatLng(pos);
       form.setFieldsValue({ lat: pos.lat, lng: pos.lng, locationQuery: q });
       lastQueryRef.current = q;
-      message.success("Đã xác định vị trí");
+      messageApi.success("Đã xác định vị trí");
     } catch (e) {
-      message.error(e.message || "Geocode thất bại");
+      messageApi.error(e.message || "Geocode thất bại");
     } finally {
       setSearching(false);
     }
@@ -287,87 +287,95 @@ export default function PostListing() {
     const pos = { lat: Number(m.lat.toFixed(6)), lng: Number(m.lng.toFixed(6)) };
     setLatLng(pos);
     form.setFieldsValue(pos);
+    messageApi.success(`Đã cập nhật tọa độ: ${pos.lat}, ${pos.lng}`);
   };
 
   const submit = async () => {
-  try {
-    await form.validateFields();
-    const values = form.getFieldsValue(true);
+    const MSG_KEY = "saveListing"; // dùng key để chuyển trạng thái message
+    try {
+      await form.validateFields();
+      const values = form.getFieldsValue(true);
 
-    const normalized = (fileList || [])
-      .map((f) => f.url || f.response?.url || f.response?.secure_url)
-      .filter(Boolean);
-    const images = normalized
-      .filter((u) => /^https?:\/\/res\.cloudinary\.com\//i.test(u))
-      .slice(0, 8);
+      const normalized = (fileList || [])
+        .map((f) => f.url || f.response?.url || f.response?.secure_url)
+        .filter(Boolean);
+      const images = normalized
+        .filter((u) => /^https?:\/\/res\.cloudinary\.com\//i.test(u))
+        .slice(0, 8);
 
-    if (images.length === 0) {
-      message.warning("Vui lòng upload ít nhất 1 ảnh (Cloudinary) trước khi lưu.");
-      return;
+      if (images.length === 0) {
+        messageApi.warning("Vui lòng upload ít nhất 1 ảnh (Cloudinary) trước khi lưu.");
+        return;
+      }
+
+      const payload = {
+        title: values.title,
+        description: values.description || "",
+        price: Number(values.price),
+        areaM2: Number(values.area_m2),
+        businessType: values.businessType,
+        locationText: values.locationText || values.locationQuery || "",
+        latitude: Number(values.lat),
+        longitude: Number(values.lng),
+        coverImage: images[0],
+        images,
+      };
+
+      const token = localStorage.getItem("ps_token") || "";
+      const headers = {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      setSubmitting(true);
+      messageApi.open({ key: MSG_KEY, type: "loading", content: "Đang lưu tin...", duration: 0 });
+
+      if (isEdit) {
+        const res = await fetch(`${API_BASE}/premises/${editId}`, {
+          method: "PUT",
+          headers,
+          credentials: "include",
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          throw new Error(txt || `Cập nhật thất bại (HTTP ${res.status})`);
+        }
+        await messageApi.open({ key: MSG_KEY, type: "success", content: "Đã cập nhật tin!", duration: 1.2 });
+      } else {
+        const res = await fetch(`${API_BASE}/premises`, {
+          method: "POST",
+          headers,
+          credentials: "include",
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          throw new Error(txt || `Đăng tin thất bại (HTTP ${res.status})`);
+        }
+        await messageApi.open({ key: MSG_KEY, type: "success", content: "Đăng tin thành công!", duration: 1.2 });
+      }
+
+      // cho user thấy message xong mới điều hướng
+      setTimeout(() => nav("/", { replace: true }), 400);
+    } catch (err) {
+      const msg =
+        err?.response?.data?.message ||
+        (typeof err?.response?.data === "string" ? err.response.data : null) ||
+        err?.message ||
+        "Lưu tin thất bại";
+      messageApi.open({ key: MSG_KEY, type: "error", content: msg, duration: 2.5 });
+    } finally {
+      setSubmitting(false);
     }
-
-    const payload = {
-      title: values.title,
-      description: values.description || "",
-      price: Number(values.price),
-      areaM2: Number(values.area_m2),
-      businessType: values.businessType,
-      locationText: values.locationText || values.locationQuery || "",
-      latitude: Number(values.lat),
-      longitude: Number(values.lng),
-      coverImage: images[0],
-      images,
-    };
-
-    // 👇 Lấy token và chuẩn bị headers có Authorization
-    const token = localStorage.getItem("ps_token") || "";
-    const headers = {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-
-    setSubmitting(true);
-    if (isEdit) {
-      // PUT cập nhật
-      const res = await fetch(`${API_BASE}/premises/${editId}`, {
-        method: "PUT",
-        headers,
-        credentials: "include",     // 👈 nếu BE dùng cookie/session vẫn OK
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      message.success("Đã cập nhật tin!");
-    } else {
-      // POST tạo mới
-      const res = await fetch(`${API_BASE}/premises`, {
-        method: "POST",
-        headers,
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      message.success("Đăng tin thành công!");
-    }
-
-    nav("/", { replace: true });
-  } catch (err) {
-    const msg =
-      err?.response?.data?.message ||
-      (typeof err?.response?.data === "string" ? err.response.data : null) ||
-      err?.message ||
-      "Lưu tin thất bại";
-    message.error(msg);
-  } finally {
-    setSubmitting(false);
-  }
-};
-
+  };
 
   const values = form.getFieldsValue(true);
   const center = useMemo(() => latLng || { lat: 21.0278, lng: 105.8342 }, [latLng]);
 
   return (
     <div style={{ maxWidth: 1000, margin: "16px auto", padding: "0 16px" }}>
+      {contextHolder}{/* ✅ BẮT BUỘC để hiển thị message */}
       <Title level={3} style={{ marginBottom: 12 }}>
         {isEdit ? "Cập nhật tin mặt bằng" : "Đăng tin mặt bằng"}
       </Title>
@@ -497,7 +505,7 @@ export default function PostListing() {
             <Upload
               listType="picture-card"
               fileList={fileList}
-              customRequest={cloudinaryRequest}
+              customRequest={cloudReq}
               onChange={({ fileList }) => {
                 const normalized = fileList.map((f) => {
                   const url = f.url || f.response?.url || f.response?.secure_url;

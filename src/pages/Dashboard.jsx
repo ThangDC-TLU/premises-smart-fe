@@ -24,21 +24,17 @@ async function changePasswordAPI(token, { oldPassword, newPassword }) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,      // ✅ gửi JWT
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ oldPassword, newPassword }),
   });
-
-  // BE trả 200 OK (text hoặc json). Trả lỗi có status ≠ 200
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
     throw new Error(txt || `Đổi mật khẩu thất bại (${res.status})`);
   }
-  // Trả về message (nếu có)
   const ct = res.headers.get("content-type") || "";
   return ct.includes("application/json") ? res.json() : res.text();
 }
-
 
 /* --- Lấy role từ context --- */
 function useRole() {
@@ -102,6 +98,7 @@ function OverviewTab() {
 
 /* --- Quản lý bài đăng (kết nối API) --- */
 function ManagePostsTab() {
+  const [messageApi, contextHolder] = message.useMessage(); // ✅ dùng hook
   const navigate = useNavigate();
   const { token, user } = useAuth() || {};
   const [loading, setLoading] = useState(true);
@@ -132,30 +129,34 @@ function ManagePostsTab() {
             price: Number(p.price) || 0,
             area_m2: Number(p.areaM2) || 0,
             address: p.locationText || "",
-            createdAt: p.createdAt || "", // BE chưa có -> trống
+            createdAt: p.createdAt || "",
             img: p.coverImage || (Array.isArray(p.images) && p.images[0]) || PLACEHOLDER_IMG,
-            ownerEmail: p.user?.email, // nếu BE trả về
+            ownerEmail: p.user?.email,
           };
         });
 
-        // Nếu muốn chỉ hiện bài của mình:
         const mine = user?.email
-          ? mapped.filter(x => !x.ownerEmail || x.ownerEmail?.toLowerCase() === user.email.toLowerCase())
+          ? mapped.filter(
+              (x) => !x.ownerEmail || x.ownerEmail?.toLowerCase() === user.email.toLowerCase()
+            )
           : mapped;
 
         if (!aborted) setRows(mine);
       } catch (e) {
         if (!aborted) {
           setErr(e.message || "Fetch error");
-          message.error("Không tải được danh sách bài đăng.");
+          messageApi.error("Không tải được danh sách bài đăng."); // ✅
         }
       } finally {
         if (!aborted) setLoading(false);
       }
     }
     load();
-    return () => { aborted = true; ctrl.abort(); };
-  }, [user?.email]);
+    return () => {
+      aborted = true;
+      ctrl.abort();
+    };
+  }, [user?.email, messageApi]);
 
   const onDelete = async (id) => {
     try {
@@ -168,13 +169,13 @@ function ManagePostsTab() {
       });
       if (res.status === 204) {
         setRows((xs) => xs.filter((x) => x.id !== id));
-        message.success("Đã xoá bài đăng.");
+        messageApi.success("Đã xoá bài đăng."); // ✅
       } else {
         const txt = await res.text().catch(() => "");
         throw new Error(`Xoá thất bại (${res.status}) ${txt}`);
       }
     } catch (e) {
-      message.error(e.message || "Không xoá được bài đăng");
+      messageApi.error(e.message || "Không xoá được bài đăng"); // ✅
     }
   };
 
@@ -185,14 +186,18 @@ function ManagePostsTab() {
       width: 110,
       render: (src, r) => (
         <Link to={`/listing/${r.id}`}>
-          <img src={src} alt="" style={{ width: 92, height: 56, objectFit: "cover", borderRadius: 6 }} />
+          <img
+            src={src}
+            alt=""
+            style={{ width: 92, height: 56, objectFit: "cover", borderRadius: 6 }}
+          />
         </Link>
       ),
     },
     { title: "Tiêu đề", dataIndex: "title", render: (t, r) => <Link to={`/listing/${r.id}`}>{t}</Link> },
-    { title: "Loại hình", dataIndex: "businessType", width: 120, render: s => <Tag>{s}</Tag> },
-    { title: "Giá", dataIndex: "price", width: 130, render: v => Intl.NumberFormat("vi-VN").format(v) + " đ/tháng" },
-    { title: "Diện tích", dataIndex: "area_m2", width: 110, render: v => `${v} m²` },
+    { title: "Loại hình", dataIndex: "businessType", width: 120, render: (s) => <Tag>{s}</Tag> },
+    { title: "Giá", dataIndex: "price", width: 130, render: (v) => Intl.NumberFormat("vi-VN").format(v) + " đ/tháng" },
+    { title: "Diện tích", dataIndex: "area_m2", width: 110, render: (v) => `${v} m²` },
     { title: "Địa chỉ", dataIndex: "address", ellipsis: true },
     {
       title: "Thao tác",
@@ -204,29 +209,32 @@ function ManagePostsTab() {
             Sửa
           </Button>
           <Popconfirm title="Xoá bài này?" onConfirm={() => onDelete(r.id)}>
-            <Button danger size="small" icon={<DeleteOutlined />}>Xoá</Button>
+            <Button danger size="small" icon={<DeleteOutlined />}>
+              Xoá
+            </Button>
           </Popconfirm>
         </Space>
-      )
-    }
+      ),
+    },
   ];
 
   return (
     <div style={{ padding: 16 }}>
+      {contextHolder}{/* ✅ Bắt buộc render để message hiển thị */}
       <Card
         title="Bài đăng của tôi"
-        extra={<Button type="primary"><Link to="/post" style={{ color: "#fff" }}>Đăng bài mới</Link></Button>}
+        extra={
+          <Button type="primary">
+            <Link to="/post" style={{ color: "#fff" }}>
+              Đăng bài mới
+            </Link>
+          </Button>
+        }
       >
         {err ? (
           <Empty description="Không thể tải dữ liệu" />
         ) : (
-          <Table
-            rowKey="id"
-            dataSource={rows}
-            columns={columns}
-            loading={loading}
-            pagination={{ pageSize: 8 }}
-          />
+          <Table rowKey="id" dataSource={rows} columns={columns} loading={loading} pagination={{ pageSize: 8 }} />
         )}
       </Card>
     </div>
@@ -260,19 +268,19 @@ function FavoritePostsTab() {
 }
 
 /* --- Đổi mật khẩu --- */
-/* --- Đổi mật khẩu --- */
 function ChangePasswordTab() {
+  const [messageApi, contextHolder] = message.useMessage(); // ✅ dùng hook
   const [form] = Form.useForm();
   const { token } = useAuth() || {};
   const [loading, setLoading] = useState(false);
 
   const onFinish = async (vals) => {
     if (!token) {
-      message.error("Bạn cần đăng nhập lại (thiếu token).");
+      messageApi.error("Bạn cần đăng nhập lại (thiếu token)."); // ✅
       return;
     }
     if (vals.next !== vals.confirm) {
-      message.warning("Mật khẩu nhập lại không khớp.");
+      messageApi.warning("Mật khẩu nhập lại không khớp."); // ✅
       return;
     }
     try {
@@ -281,18 +289,18 @@ function ChangePasswordTab() {
         oldPassword: vals.current,
         newPassword: vals.next,
       });
-      message.success("Đổi mật khẩu thành công!");
+      messageApi.success("Đổi mật khẩu thành công!"); // ✅
       form.resetFields();
     } catch (e) {
-      // Một số thông điệp phổ biến từ BE: 401 sai mật khẩu cũ, 404 không tìm thấy user
-      message.error(e.message || "Đổi mật khẩu thất bại");
+      messageApi.error(e.message || "Đổi mật khẩu thất bại"); // ✅
     } finally {
       setLoading(false);
     }
   };
 
- return (
+  return (
     <div style={{ padding: 16 }}>
+      {contextHolder}{/* ✅ Bắt buộc render để message hiển thị */}
       <Card title="Đổi mật khẩu">
         <Form form={form} layout="vertical" style={{ maxWidth: 420 }} onFinish={onFinish}>
           <Form.Item name="current" label="Mật khẩu hiện tại" rules={[{ required: true }]}>
@@ -321,13 +329,14 @@ function ChangePasswordTab() {
             <Input.Password prefix={<LockOutlined />} />
           </Form.Item>
 
-          <Button type="primary" htmlType="submit" loading={loading}>Cập nhật</Button>
+          <Button type="primary" htmlType="submit" loading={loading}>
+            Cập nhật
+          </Button>
         </Form>
       </Card>
     </div>
   );
 }
-
 
 /* --- Biểu đồ tổng quan (Admin) --- */
 function AdminChartsTab() {
