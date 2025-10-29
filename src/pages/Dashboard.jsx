@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+// src/pages/Dashboard.jsx
+import { useEffect, useMemo, useState } from "react";
 import {
   Tabs, Card, Row, Col, Statistic, Progress, Tag, List, Button, Space,
   Table, Typography, Popconfirm, message, Form, Input, Empty
 } from "antd";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   EyeOutlined, HeartOutlined, LikeOutlined, EditOutlined, DeleteOutlined,
   BarChartOutlined, LockOutlined
@@ -13,11 +14,17 @@ import { useAuth } from "../auth/AuthContext";
 
 const { Title, Paragraph, Text } = Typography;
 
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
+const PLACEHOLDER_IMG = "https://picsum.photos/seed/premise/900/600";
+const TYPE_LABEL = { fnb: "F&B", retail: "Bán lẻ", office: "Văn phòng", warehouse: "Kho" };
+
 /* --- Lấy role từ context --- */
 function useRole() {
   const { user } = useAuth();
   return String(user?.role?.name ?? user?.role ?? "user").toLowerCase();
 }
+
+/* ===================== TABS ===================== */
 
 /* --- Tổng quan --- */
 function OverviewTab() {
@@ -71,38 +78,110 @@ function OverviewTab() {
   );
 }
 
-/* --- Quản lý bài đăng --- */
+/* --- Quản lý bài đăng (kết nối API) --- */
 function ManagePostsTab() {
-  const [data, setData] = useState([
-    { id: "p01", title: "Mặt bằng Q.1 góc 2 MT", status: "Đang hiển thị", views: 523, favs: 21, createdAt: "2025-10-01" },
-    { id: "p02", title: "Văn phòng Q.3 80m²", status: "Nháp", views: 92, favs: 5, createdAt: "2025-10-05" },
-    { id: "p03", title: "Kho Q.7 120m²", status: "Đang hiển thị", views: 287, favs: 11, createdAt: "2025-10-08" },
-  ]);
+  const navigate = useNavigate();
+  const { token, user } = useAuth() || {};
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]);
+  const [err, setErr] = useState(null);
+
+  // Lấy danh sách bài đăng
+  useEffect(() => {
+    let aborted = false;
+    const ctrl = new AbortController();
+    async function load() {
+      setLoading(true);
+      setErr(null);
+      try {
+        const res = await fetch(`${API_BASE}/premises`, {
+          signal: ctrl.signal,
+          headers: { Accept: "application/json" },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+
+        const mapped = (Array.isArray(json) ? json : []).map((p) => {
+          const typeKey = String(p.businessType || "").toLowerCase().trim();
+          return {
+            id: p.id,
+            title: p.title || "Không có tiêu đề",
+            businessType: TYPE_LABEL[typeKey] || p.businessType || "Khác",
+            price: Number(p.price) || 0,
+            area_m2: Number(p.areaM2) || 0,
+            address: p.locationText || "",
+            createdAt: p.createdAt || "", // BE chưa có -> trống
+            img: p.coverImage || (Array.isArray(p.images) && p.images[0]) || PLACEHOLDER_IMG,
+            ownerEmail: p.user?.email, // nếu BE trả về
+          };
+        });
+
+        // Nếu muốn chỉ hiện bài của mình:
+        const mine = user?.email
+          ? mapped.filter(x => !x.ownerEmail || x.ownerEmail?.toLowerCase() === user.email.toLowerCase())
+          : mapped;
+
+        if (!aborted) setRows(mine);
+      } catch (e) {
+        if (!aborted) {
+          setErr(e.message || "Fetch error");
+          message.error("Không tải được danh sách bài đăng.");
+        }
+      } finally {
+        if (!aborted) setLoading(false);
+      }
+    }
+    load();
+    return () => { aborted = true; ctrl.abort(); };
+  }, [user?.email]);
+
+  const onDelete = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/premises/${id}`, {
+        method: "DELETE",
+        headers: {
+          Accept: "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (res.status === 204) {
+        setRows((xs) => xs.filter((x) => x.id !== id));
+        message.success("Đã xoá bài đăng.");
+      } else {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`Xoá thất bại (${res.status}) ${txt}`);
+      }
+    } catch (e) {
+      message.error(e.message || "Không xoá được bài đăng");
+    }
+  };
 
   const columns = [
-    { title: "Tiêu đề", dataIndex: "title", render: (t, r) => <Link to={`/listing/${r.id}`}>{t}</Link> },
-    { title: "Trạng thái", dataIndex: "status", render: s => <Tag color={s === "Đang hiển thị" ? "green" : "default"}>{s}</Tag> },
-    { title: <><EyeOutlined /> Xem</>, dataIndex: "views", width: 110 },
-    { title: "Yêu thích", dataIndex: "favs", width: 110 },
-    { title: "Tạo lúc", dataIndex: "createdAt", width: 130 },
     {
-      title: "Thao tác", key: "actions", width: 220,
+      title: "Bìa",
+      dataIndex: "img",
+      width: 110,
+      render: (src, r) => (
+        <Link to={`/listing/${r.id}`}>
+          <img src={src} alt="" style={{ width: 92, height: 56, objectFit: "cover", borderRadius: 6 }} />
+        </Link>
+      ),
+    },
+    { title: "Tiêu đề", dataIndex: "title", render: (t, r) => <Link to={`/listing/${r.id}`}>{t}</Link> },
+    { title: "Loại hình", dataIndex: "businessType", width: 120, render: s => <Tag>{s}</Tag> },
+    { title: "Giá", dataIndex: "price", width: 130, render: v => Intl.NumberFormat("vi-VN").format(v) + " đ/tháng" },
+    { title: "Diện tích", dataIndex: "area_m2", width: 110, render: v => `${v} m²` },
+    { title: "Địa chỉ", dataIndex: "address", ellipsis: true },
+    {
+      title: "Thao tác",
+      key: "actions",
+      width: 210,
       render: (_, r) => (
         <Space>
-          <Button size="small" icon={<EditOutlined />}>Sửa</Button>
-          <Button
-            size="small"
-            onClick={() => {
-              setData(ds => ds.map(x => x.id === r.id ? ({ ...x, status: x.status === "Đang hiển thị" ? "Nháp" : "Đang hiển thị" }) : x));
-              message.success("Đã chuyển trạng thái (demo)");
-            }}
-          >
-            {r.status === "Đang hiển thị" ? "Ẩn" : "Hiển thị"}
+          <Button size="small" icon={<EditOutlined />} onClick={() => navigate(`/post?edit=${r.id}`)}>
+            Sửa
           </Button>
-          <Popconfirm
-            title="Xoá bài này?"
-            onConfirm={() => { setData(ds => ds.filter(x => x.id !== r.id)); message.success("Đã xoá (demo)"); }}
-          >
+          <Popconfirm title="Xoá bài này?" onConfirm={() => onDelete(r.id)}>
             <Button danger size="small" icon={<DeleteOutlined />}>Xoá</Button>
           </Popconfirm>
         </Space>
@@ -116,7 +195,17 @@ function ManagePostsTab() {
         title="Bài đăng của tôi"
         extra={<Button type="primary"><Link to="/post" style={{ color: "#fff" }}>Đăng bài mới</Link></Button>}
       >
-        <Table rowKey="id" dataSource={data} columns={columns} pagination={{ pageSize: 5 }} />
+        {err ? (
+          <Empty description="Không thể tải dữ liệu" />
+        ) : (
+          <Table
+            rowKey="id"
+            dataSource={rows}
+            columns={columns}
+            loading={loading}
+            pagination={{ pageSize: 8 }}
+          />
+        )}
       </Card>
     </div>
   );

@@ -9,9 +9,14 @@ import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { createPremises } from "../api/premises";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 const { Title, Paragraph, Text } = Typography;
+
+/* ======================
+   ENV / API
+====================== */
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
 
 /* ======================
    Cloudinary (unsigned)
@@ -19,13 +24,11 @@ const { Title, Paragraph, Text } = Typography;
 const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
-// Upload 1 file → secure_url
 async function uploadToCloudinary(fileLike) {
   if (!CLOUD_NAME || !UPLOAD_PRESET) {
     throw new Error("Thiếu Cloudinary .env (VITE_CLOUDINARY_CLOUD_NAME / VITE_CLOUDINARY_UPLOAD_PRESET).");
   }
   const url = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
-
   const file = fileLike?.originFileObj instanceof File ? fileLike.originFileObj : fileLike;
   if (!(file instanceof File)) throw new Error("File không hợp lệ (thiếu originFileObj).");
 
@@ -45,7 +48,6 @@ async function uploadToCloudinary(fileLike) {
   return data.secure_url;
 }
 
-// Adapter cho Antd Upload
 const cloudinaryRequest = async ({ file, onSuccess, onError, onProgress }) => {
   try {
     onProgress?.({ percent: 20 });
@@ -149,6 +151,17 @@ async function geocodeAddressSmart(rawQuery) {
 }
 
 /* ======================
+   Type mapping
+====================== */
+const TYPE_LABEL = { fnb: "F&B", retail: "Bán lẻ", office: "Văn phòng", warehouse: "Kho bãi" };
+const LABEL_TO_KEY = {
+  "f&b": "fnb", "fnb": "fnb", "f b": "fnb",
+  "bán lẻ": "retail", "ban le": "retail", retail: "retail",
+  "văn phòng": "office", "van phong": "office", office: "office",
+  "kho": "warehouse", "kho bãi": "warehouse", "kho bai": "warehouse", warehouse:"warehouse"
+};
+
+/* ======================
    Component
 ====================== */
 export default function PostListing() {
@@ -158,15 +171,69 @@ export default function PostListing() {
   const [submitting, setSubmitting] = useState(false);
   const [latLng, setLatLng] = useState(null);
   const [searching, setSearching] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const lastQueryRef = useRef("");
   const nav = useNavigate();
+
+  // detect edit mode via ?edit=ID
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  const isEdit = !!editId;
 
   const steps = [
     { title: "Thông tin cơ bản" },
     { title: "Vị trí" },
     { title: "Hình ảnh" },
-    { title: "Xem trước & đăng" },
+    { title: "Xem trước & " + (isEdit ? "cập nhật" : "đăng") },
   ];
+
+  // load detail when editing
+  useEffect(() => {
+    if (!isEdit) return;
+    let aborted = false;
+    (async () => {
+      try {
+        setLoadingDetail(true);
+        const res = await fetch(`${API_BASE}/premises/${editId}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const d = await res.json();
+        // d = ListingDetailDTO
+        const key = LABEL_TO_KEY[String(d.businessType || "").toLowerCase().trim()] || d.businessType || "fnb";
+
+        // build fileList from images; put cover first
+        const imgs = Array.isArray(d.images) ? d.images : [];
+        const fl = imgs.map((url, i) => ({ uid: `${i}-${url}`, name: `img-${i}`, status: "done", url }));
+        const cv = d.coverImage || fl[0]?.url || null;
+        if (cv) fl.sort((a, b) => (a.url === cv ? -1 : b.url === cv ? 1 : 0));
+
+        // set form fields
+        if (!aborted) {
+          setFileList(fl);
+          // prefer server lat/lng; if null, try to geocode address later if needed
+          const lat = d.latitude ?? null;
+          const lng = d.longitude ?? null;
+          if (lat && lng) setLatLng({ lat, lng });
+
+          form.setFieldsValue({
+            title: d.title,
+            price: d.price,
+            area_m2: d.area_m2,            // DTO dùng area_m2
+            businessType: key,
+            description: d.description,
+            locationText: d.address || "", // dùng cho search & submit
+            locationQuery: d.address || "",// để hiển thị trong input tìm
+            lat: lat ?? undefined,
+            lng: lng ?? undefined,
+          });
+        }
+      } catch (e) {
+        message.error("Không tải được dữ liệu tin cần sửa.");
+      } finally {
+        if (!aborted) setLoadingDetail(false);
+      }
+    })();
+    return () => (aborted = true);
+  }, [isEdit, editId, form]);
 
   useEffect(() => {
     const lat = form.getFieldValue("lat");
@@ -179,7 +246,8 @@ export default function PostListing() {
       if (step === 0) {
         await form.validateFields(["title", "price", "area_m2", "businessType"]);
       } else if (step === 1) {
-        await form.validateFields(["locationQuery"]);
+        // dùng locationText để submit và geocode
+        await form.validateFields(["locationText"]);
         const lt = form.getFieldValue("lat");
         const lg = form.getFieldValue("lng");
         if (!lt || !lg) {
@@ -193,7 +261,7 @@ export default function PostListing() {
   const prev = () => setStep((s) => s - 1);
 
   const handleSearch = async () => {
-    const q = (form.getFieldValue("locationQuery") || "").trim();
+    const q = (form.getFieldValue("locationText") || "").trim(); // dùng locationText
     if (q.length < 3) {
       message.info("Nhập địa chỉ rõ hơn (vd: 'Phú Mỹ, Xuân Lộc, Hậu Lộc, Thanh Hóa').");
       return;
@@ -204,7 +272,7 @@ export default function PostListing() {
       setSearching(true);
       const pos = await geocodeAddressSmart(q);
       setLatLng(pos);
-      form.setFieldsValue({ lat: pos.lat, lng: pos.lng });
+      form.setFieldsValue({ lat: pos.lat, lng: pos.lng, locationQuery: q });
       lastQueryRef.current = q;
       message.success("Đã xác định vị trí");
     } catch (e) {
@@ -216,68 +284,101 @@ export default function PostListing() {
 
   const onMarkerDragEnd = (e) => {
     const m = e.target.getLatLng();
-    const pos = { lat: m.lat, lng: m.lng };
+    const pos = { lat: Number(m.lat.toFixed(6)), lng: Number(m.lng.toFixed(6)) };
     setLatLng(pos);
     form.setFieldsValue(pos);
   };
 
   const submit = async () => {
-    try {
-      await form.validateFields();
-      const values = form.getFieldsValue(true);
+  try {
+    await form.validateFields();
+    const values = form.getFieldsValue(true);
 
-      // Lấy link Cloudinary; ảnh đầu tiên là coverImage
-      const normalized = (fileList || []).map((f) => f.url || f.response?.url || f.response?.secure_url).filter(Boolean);
-      const images = normalized
-        .filter((u) => /^https?:\/\/res\.cloudinary\.com\//i.test(u))
-        .slice(0, 8);
+    const normalized = (fileList || [])
+      .map((f) => f.url || f.response?.url || f.response?.secure_url)
+      .filter(Boolean);
+    const images = normalized
+      .filter((u) => /^https?:\/\/res\.cloudinary\.com\//i.test(u))
+      .slice(0, 8);
 
-      if (images.length === 0) {
-        message.warning("Vui lòng upload ít nhất 1 ảnh (Cloudinary) trước khi đăng.");
-        return;
-      }
-
-      const payload = {
-        title: values.title,
-        description: values.description || "",
-        price: Number(values.price),
-        areaM2: Number(values.area_m2),
-        businessType: values.businessType,
-        locationText: values.locationQuery || "",
-        latitude: Number(values.lat),
-        longitude: Number(values.lng),
-        coverImage: images[0],   // ✅ Ảnh bìa
-        images,                  // toàn bộ ảnh (bao gồm coverImage ở index 0)
-      };
-
-      setSubmitting(true);
-      await createPremises(payload);
-      message.success("Đăng tin thành công!");
-
-      // Điều hướng về Trang chủ
-      nav("/", { replace: true });
-
-    } catch (err) {
-      const msg =
-        err?.response?.data?.message ||
-        (typeof err?.response?.data === "string" ? err.response.data : null) ||
-        err?.message ||
-        "Đăng tin thất bại";
-      message.error(msg);
-    } finally {
-      setSubmitting(false);
+    if (images.length === 0) {
+      message.warning("Vui lòng upload ít nhất 1 ảnh (Cloudinary) trước khi lưu.");
+      return;
     }
-  };
+
+    const payload = {
+      title: values.title,
+      description: values.description || "",
+      price: Number(values.price),
+      areaM2: Number(values.area_m2),
+      businessType: values.businessType,
+      locationText: values.locationText || values.locationQuery || "",
+      latitude: Number(values.lat),
+      longitude: Number(values.lng),
+      coverImage: images[0],
+      images,
+    };
+
+    // 👇 Lấy token và chuẩn bị headers có Authorization
+    const token = localStorage.getItem("ps_token") || "";
+    const headers = {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+
+    setSubmitting(true);
+    if (isEdit) {
+      // PUT cập nhật
+      const res = await fetch(`${API_BASE}/premises/${editId}`, {
+        method: "PUT",
+        headers,
+        credentials: "include",     // 👈 nếu BE dùng cookie/session vẫn OK
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      message.success("Đã cập nhật tin!");
+    } else {
+      // POST tạo mới
+      const res = await fetch(`${API_BASE}/premises`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      message.success("Đăng tin thành công!");
+    }
+
+    nav("/", { replace: true });
+  } catch (err) {
+    const msg =
+      err?.response?.data?.message ||
+      (typeof err?.response?.data === "string" ? err.response.data : null) ||
+      err?.message ||
+      "Lưu tin thất bại";
+    message.error(msg);
+  } finally {
+    setSubmitting(false);
+  }
+};
+
 
   const values = form.getFieldsValue(true);
   const center = useMemo(() => latLng || { lat: 21.0278, lng: 105.8342 }, [latLng]);
 
   return (
     <div style={{ maxWidth: 1000, margin: "16px auto", padding: "0 16px" }}>
-      <Title level={3} style={{ marginBottom: 12 }}>Đăng tin mặt bằng</Title>
+      <Title level={3} style={{ marginBottom: 12 }}>
+        {isEdit ? "Cập nhật tin mặt bằng" : "Đăng tin mặt bằng"}
+      </Title>
 
-      <Card>
-        <Steps current={step} items={steps} size="small" />
+      <Card loading={loadingDetail}>
+        <Steps current={step} items={[
+          { title: "Thông tin cơ bản" },
+          { title: "Vị trí" },
+          { title: "Hình ảnh" },
+          { title: isEdit ? "Xem trước & cập nhật" : "Xem trước & đăng" },
+        ]} size="small" />
         <div style={{ marginTop: 16 }} />
 
         {/* STEP 1 – BASIC */}
@@ -308,10 +409,10 @@ export default function PostListing() {
                 <Form.Item label="Loại hình" name="businessType" rules={[{ required: true }]}>
                   <Select
                     options={[
-                      { value: "fnb", label: "F&B" },
-                      { value: "office", label: "Văn phòng" },
-                      { value: "retail", label: "Bán lẻ" },
-                      { value: "warehouse", label: "Kho bãi" },
+                      { value: "fnb", label: TYPE_LABEL.fnb },
+                      { value: "office", label: TYPE_LABEL.office },
+                      { value: "retail", label: TYPE_LABEL.retail },
+                      { value: "warehouse", label: TYPE_LABEL.warehouse },
                     ]}
                     placeholder="Chọn loại hình"
                   />
@@ -331,15 +432,11 @@ export default function PostListing() {
             <Form.Item
               label={
                 <Space size={6}>
-                  <span>Nhập vị trí</span>
+                  <span>Địa chỉ hiển thị (locationText)</span>
                   <Tooltip
                     title={
                       <>
-                        Ảnh đầu tiên sẽ là <b>ảnh bìa</b>. <br />
-                        Ví dụ địa chỉ dễ tìm: <br />
-                        • <Text code>Phú Mỹ, Xuân Lộc, Hậu Lộc, Thanh Hóa</Text> <br />
-                        • <Text code>123 Nguyễn Trãi, Thanh Xuân, Hà Nội</Text> <br />
-                        • <Text code>25 Lê Lợi, Quận 1, TP.HCM</Text>
+                        Gõ theo thứ tự nhỏ → lớn (xã/phường, quận/huyện, tỉnh/thành phố), thêm <b>“Việt Nam”</b> nếu cần.
                       </>
                     }
                   >
@@ -347,12 +444,11 @@ export default function PostListing() {
                   </Tooltip>
                 </Space>
               }
-              name="locationQuery"
+              name="locationText"
               rules={[{ required: true, message: "Nhập địa chỉ để tìm vị trí" }]}
-              extra="Mẹo: Gõ theo thứ tự nhỏ → lớn (xã/phường, huyện/quận, tỉnh/thành phố), thêm 'Việt Nam' nếu cần."
             >
               <Input
-                placeholder="VD: Phú Mỹ, Xuân Lộc, Hậu Lộc, Thanh Hóa"
+                placeholder="VD: 252 Tây Sơn, Đống Đa, Hà Nội"
                 onPressEnter={handleSearch}
                 allowClear
               />
@@ -431,7 +527,7 @@ export default function PostListing() {
               <Tag>{values.area_m2 || 0} m²</Tag>
               <Tag>{(values.businessType || "").toUpperCase()}</Tag>
             </Space>
-            <Paragraph type="secondary">{values.locationQuery || "Chưa có địa chỉ"}</Paragraph>
+            <Paragraph type="secondary">{values.locationText || "Chưa có địa chỉ"}</Paragraph>
             <Paragraph>{values.description || "Chưa có mô tả."}</Paragraph>
 
             <Row gutter={12}>
@@ -477,7 +573,9 @@ export default function PostListing() {
           {step < 3 ? (
             <Button type="primary" onClick={next}>Tiếp tục</Button>
           ) : (
-            <Button type="primary" loading={submitting} onClick={submit}>Đăng tin</Button>
+            <Button type="primary" loading={submitting} onClick={submit}>
+              {isEdit ? "Cập nhật" : "Đăng tin"}
+            </Button>
           )}
         </div>
       </Card>
