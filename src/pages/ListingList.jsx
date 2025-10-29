@@ -1,38 +1,31 @@
+// src/pages/ListingList.jsx
 import { useEffect, useMemo, useState } from "react";
 import {
   Row, Col, Card, Tag, Typography, Pagination, Space,
-  Input, Select, Empty, Skeleton
+  Input, Select, Empty, Skeleton, message
 } from "antd";
 import { EnvironmentOutlined, AreaChartOutlined } from "@ant-design/icons";
 import { Link, useSearchParams } from "react-router-dom";
 
 const { Title, Text, Paragraph } = Typography;
 
-/* ================= MOCK DATA (xem UI) ================= */
-const MOCK = Array.from({ length: 36 }).map((_, i) => {
-  const id = `L${String(i + 1).padStart(3, "0")}`;
-  const area = [30, 45, 60, 80, 100, 120][i % 6];
-  const price = [8000000, 12000000, 18000000, 25000000, 35000000, 50000000][i % 6];
-  const type = ["F&B", "Văn phòng", "Bán lẻ", "Kho bãi"][i % 4];
-  const city = ["Hà Nội", "TP. HCM", "Đà Nẵng"][i % 3];
-  const district = ["Q.1", "Q.3", "Q.7", "Cầu Giấy", "Thanh Xuân"][i % 5];
-  return {
-    id,
-    title: `${type} – ${area}m², ${district}`,
-    price,
-    area_m2: area,
-    businessType: type,
-    address: `${district}, ${city}`,
-    img: `https://picsum.photos/seed/${id}/900/600`,
-  };
-});
-const currency = (n) => (n || 0).toLocaleString("vi-VN") + " đ/tháng";
+const currency = (n) => (Number(n) || 0).toLocaleString("vi-VN") + " đ/tháng";
+const PLACEHOLDER_IMG = "https://picsum.photos/seed/premise/900/600";
 
-/* ================= PAGE ================= */
+// map key → label để hiển thị
+const TYPE_LABEL = {
+  fnb: "F&B",
+  retail: "Bán lẻ",
+  office: "Văn phòng",
+};
+
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
+
 export default function ListingList({ title = "Cho thuê mặt bằng kinh doanh" }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [dataAll, setDataAll] = useState([]);
+  const [err, setErr] = useState(null);
 
   // query state từ URL
   const page = Number(searchParams.get("page") || 1);
@@ -42,18 +35,57 @@ export default function ListingList({ title = "Cho thuê mặt bằng kinh doanh
   const pageSize = 8;
 
   useEffect(() => {
-    // giả lập gọi API
-    setLoading(true);
-    const t = setTimeout(() => {
-      setDataAll(MOCK);
-      setLoading(false);
-    }, 400);
-    return () => clearTimeout(t);
+    let aborted = false;
+    const ctrl = new AbortController();
+
+    async function load() {
+      setLoading(true);
+      setErr(null);
+      try {
+        const res = await fetch(`${API_BASE}/premises`, { signal: ctrl.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+
+        // Chuẩn hóa dữ liệu cho UI
+        const mapped = (Array.isArray(json) ? json : []).map((p) => {
+          const typeKey = (p.businessType || "").toString().toLowerCase().trim(); // fnb | retail | office
+          const businessType = TYPE_LABEL[typeKey] || p.businessType || "Khác";
+          const cover = p.coverImage || (Array.isArray(p.images) && p.images[0]) || PLACEHOLDER_IMG;
+          return {
+            id: p.id,
+            title: p.title || "Không có tiêu đề",
+            price: Number(p.price) || 0,
+            area_m2: Number(p.areaM2) || 0,
+            businessType,        // label hiển thị
+            typeKey,             // key để filter
+            address: p.locationText || "",
+            img: cover,
+            _raw: p,             // giữ bản gốc (nếu cần)
+          };
+        });
+
+        if (!aborted) setDataAll(mapped);
+      } catch (e) {
+        if (!aborted) {
+          setErr(e.message || "Fetch error");
+          message.error("Không tải được danh sách mặt bằng. Vui lòng kiểm tra API/CORS.");
+        }
+      } finally {
+        if (!aborted) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      aborted = true;
+      ctrl.abort();
+    };
   }, []);
 
   const filtered = useMemo(() => {
     let data = [...dataAll];
-    // filter
+
+    // filter text
     if (q) {
       const kw = q.toLowerCase();
       data = data.filter(
@@ -63,13 +95,14 @@ export default function ListingList({ title = "Cho thuê mặt bằng kinh doanh
           x.businessType.toLowerCase().includes(kw)
       );
     }
-    if (type !== "all") data = data.filter((x) => x.businessType.toLowerCase() === type);
+    // filter type theo key gốc (fnb | retail | office)
+    if (type !== "all") data = data.filter((x) => x.typeKey === type);
 
     // sort
     if (sort === "price_asc") data.sort((a, b) => a.price - b.price);
     if (sort === "price_desc") data.sort((a, b) => b.price - a.price);
     if (sort === "area_desc") data.sort((a, b) => b.area_m2 - a.area_m2);
-    // newest: giữ nguyên mock
+    // newest: giữ nguyên theo API
     return data;
   }, [dataAll, q, sort, type]);
 
@@ -88,7 +121,7 @@ export default function ListingList({ title = "Cho thuê mặt bằng kinh doanh
     <div style={{ maxWidth: 1200, margin: "16px auto", padding: "0 16px" }}>
       <Title level={2} style={{ marginBottom: 4 }}>{title}</Title>
       <Text type="secondary">
-        {loading ? "Đang tải..." : <>Hiện có <b>{total}</b> kết quả.</>}
+        {loading ? "Đang tải..." : err ? "Có lỗi khi tải dữ liệu." : <>Hiện có <b>{total}</b> kết quả.</>}
       </Text>
 
       {/* Toolbar: tìm kiếm + lọc + sắp xếp */}
@@ -105,10 +138,9 @@ export default function ListingList({ title = "Cho thuê mặt bằng kinh doanh
           onChange={(v) => setParams({ type: v })}
           options={[
             { value: "all", label: "Tất cả loại hình" },
-            { value: "f&b", label: "F&B" },
-            { value: "văn phòng", label: "Văn phòng" },
-            { value: "bán lẻ", label: "Bán lẻ" },
-            { value: "kho bãi", label: "Kho bãi" },
+            { value: "fnb", label: "F&B" },
+            { value: "retail", label: "Bán lẻ" },
+            { value: "office", label: "Văn phòng" },
           ]}
           style={{ width: 180 }}
         />
@@ -134,6 +166,8 @@ export default function ListingList({ title = "Cho thuê mặt bằng kinh doanh
             </Col>
           ))}
         </Row>
+      ) : err ? (
+        <Empty description="Không thể tải dữ liệu từ API" style={{ padding: "40px 0" }} />
       ) : total === 0 ? (
         <Empty description="Chưa có kết quả" style={{ padding: "40px 0" }} />
       ) : (
@@ -152,6 +186,7 @@ export default function ListingList({ title = "Cho thuê mặt bằng kinh doanh
                           alt={it.title}
                           loading="lazy"
                           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                          onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
                         />
                         {/* overlay loại hình */}
                         <Tag

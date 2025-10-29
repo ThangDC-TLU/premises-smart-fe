@@ -1,71 +1,160 @@
-import { useMemo, useState } from "react";
-import { Row, Col, Card, Tag, Typography, Pagination, Space } from "antd"; // ⬅️ bỏ Paragraph ở đây
+// src/components/ListingGrid.jsx
+import { useEffect, useMemo, useState } from "react";
+import {
+  Row, Col, Card, Tag, Typography, Pagination, Space,
+  Empty, Skeleton, message
+} from "antd";
 import { EnvironmentOutlined, AreaChartOutlined } from "@ant-design/icons";
 import { Link } from "react-router-dom";
 
-const { Title, Text, Paragraph } = Typography; // ⬅️ lấy Paragraph từ Typography
+const { Title, Text } = Typography;
 
-/* Mock data để xem UI – sau này thay bằng props từ API */
-const MOCK = Array.from({ length: 24 }).map((_, i) => {
-  const id = `L${String(i + 1).padStart(3, "0")}`;
-  const area = [30, 45, 60, 80, 100, 120][i % 6];
-  const price = [8000000, 12000000, 18000000, 25000000, 35000000, 50000000][i % 6];
-  const type = ["F&B", "Văn phòng", "Bán lẻ", "Kho bãi"][i % 4];
-  const city = ["Hà Nội", "TP. HCM", "Đà Nẵng"][i % 3];
-  const district = ["Q.1", "Q.3", "Q.7", "Cầu Giấy", "Thanh Xuân"][i % 5];
-  return {
-    id,
-    title: `${type} – ${area}m², ${district}`,
-    price,
-    area_m2: area,
-    businessType: type,
-    address: `${district}, ${city}`,
-    img: `https://picsum.photos/seed/${id}/900/600`,
-  };
-});
+const PLACEHOLDER_IMG = "https://picsum.photos/seed/premise/900/600";
+const TYPE_LABEL = { fnb: "F&B", retail: "Bán lẻ", office: "Văn phòng" };
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
 
-const currency = (n) => (n || 0).toLocaleString("vi-VN") + " đ/tháng";
+const fmtVND = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
+const currency = (n) => fmtVND.format(Number(n) || 0).replace("₫", "đ/tháng");
 
-export default function ListingGrid({ items = MOCK, pageSize = 12, title = "Cho thuê mặt bằng kinh doanh" }) {
+export default function ListingGrid({ pageSize = 12, title = "Cho thuê mặt bằng kinh doanh" }) {
   const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [items, setItems] = useState([]);
+
+  useEffect(() => {
+    let aborted = false;
+    const ctrl = new AbortController();
+
+    async function load() {
+      setLoading(true);
+      setErr(null);
+      try {
+        const res = await fetch(`${API_BASE}/premises`, {
+          signal: ctrl.signal,
+          headers: { Accept: "application/json" },
+          // credentials: "include", // bật nếu bạn dùng session cookie
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+
+        const mapped = (Array.isArray(json) ? json : []).map((p) => {
+          const typeKey = (p.businessType || "").toString().toLowerCase().trim(); // fnb|retail|office
+          const businessType = TYPE_LABEL[typeKey] || p.businessType || "Khác";
+          const cover = p.coverImage || (Array.isArray(p.images) && p.images[0]) || PLACEHOLDER_IMG;
+          return {
+            id: p.id,
+            title: p.title || "Không có tiêu đề",
+            price: Number(p.price) || 0,
+            area_m2: Number(p.areaM2) || 0,
+            businessType,
+            address: p.locationText || "",
+            img: cover,
+          };
+        });
+
+        if (!aborted) setItems(mapped);
+      } catch (e) {
+        if (!aborted) {
+          setErr(e.message || "Fetch error");
+          message.error("Không tải được danh sách mặt bằng. Kiểm tra API/CORS.");
+        }
+      } finally {
+        if (!aborted) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      aborted = true;
+      ctrl.abort();
+    };
+  }, []);
+
   const total = items.length;
-  const pageData = useMemo(() => items.slice((page - 1) * pageSize, page * pageSize), [items, page, pageSize]);
+  const pageData = useMemo(
+    () => items.slice((page - 1) * pageSize, page * pageSize),
+    [items, page, pageSize]
+  );
 
   return (
     <div>
       <Title level={2} style={{ marginBottom: 4 }}>{title}</Title>
-      <Text type="secondary">Hiện có <b>{total}</b> kết quả trên tổng số <b>{Math.max(1, Math.ceil(total / pageSize))}</b> trang.</Text>
+      <Text type="secondary">
+        {loading ? "Đang tải..." : err ? "Có lỗi khi tải dữ liệu." :
+          <>Hiện có <b>{total}</b> kết quả trên <b>{Math.max(1, Math.ceil(total / pageSize))}</b> trang.</>}
+      </Text>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
-        {pageData.map((it) => (
-          <Col xs={24} sm={12} lg={8} xl={6} key={it.id}>
-            <Card
-              hoverable
-              cover={
-                <Link to={`/listing/${it.id}`}>
-                  <img src={it.img} alt={it.title} style={{ width: "100%", height: 160, objectFit: "cover" }} />
-                </Link>
-              }
-            >
-              <Link to={`/listing/${it.id}`}>
-                <Title level={5} style={{ marginBottom: 6, minHeight: 44 }}>{it.title}</Title>
-              </Link>
-              <Space wrap size="small" style={{ marginBottom: 6 }}>
-                <Tag color="red">{currency(it.price)}</Tag>
-                <Tag icon={<AreaChartOutlined />}>{it.area_m2} m²</Tag>
-                <Tag>{it.businessType}</Tag>
-              </Space>
-              <div style={{ color: "#8c8c8c" }}>
-                <EnvironmentOutlined /> {it.address}
-              </div>
-            </Card>
-          </Col>
-        ))}
-      </Row>
+      {/* Grid */}
+      {loading ? (
+        <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
+          {Array.from({ length: pageSize }).map((_, i) => (
+            <Col xs={24} sm={12} lg={8} xl={6} key={i}>
+              <Card style={{ height: 280 }}><Skeleton active /></Card>
+            </Col>
+          ))}
+        </Row>
+      ) : err ? (
+        <Empty description="Không thể tải dữ liệu từ API" style={{ marginTop: 24 }} />
+      ) : total === 0 ? (
+        <Empty description="Chưa có kết quả" style={{ marginTop: 24 }} />
+      ) : (
+        <>
+          <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
+            {pageData.map((it) => (
+              <Col xs={24} sm={12} lg={8} xl={6} key={it.id}>
+                <Card
+                  hoverable
+                  cover={
+                    <Link to={`/listing/${it.id}`}>
+                      <img
+                        src={it.img}
+                        alt={it.title}
+                        style={{ width: "100%", height: 160, objectFit: "cover" }}
+                        onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
+                        loading="lazy"
+                      />
+                    </Link>
+                  }
+                >
+                  <Link to={`/listing/${it.id}`}>
+                    <Title level={5} style={{
+                      marginBottom: 6,
+                      minHeight: 44,
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}>
+                      {it.title}
+                    </Title>
+                  </Link>
 
-      <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
-        <Pagination current={page} pageSize={pageSize} total={total} onChange={(p) => setPage(p)} showSizeChanger={false} />
-      </div>
+                  <Space wrap size="small" style={{ marginBottom: 6 }}>
+                    <Tag color="red">{currency(it.price)}</Tag>
+                    <Tag icon={<AreaChartOutlined />}>{it.area_m2} m²</Tag>
+                    <Tag>{it.businessType}</Tag>
+                  </Space>
+
+                  <div style={{ color: "#8c8c8c" }}>
+                    <EnvironmentOutlined /> {it.address}
+                  </div>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+            <Pagination
+              current={page}
+              pageSize={pageSize}
+              total={total}
+              onChange={(p) => setPage(p)}
+              showSizeChanger={false}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
