@@ -11,10 +11,11 @@ import {
 } from "@ant-design/icons";
 import { getAllFavorites } from "../utils/favorites";
 import { useAuth } from "../auth/AuthContext";
+import AdminAnalytics from "../components/AdminAnalytics";
 
 const { Title, Paragraph, Text } = Typography;
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8089/api";
 const PLACEHOLDER_IMG = "https://picsum.photos/seed/premise/900/600";
 const TYPE_LABEL = { fnb: "F&B", retail: "Bán lẻ", office: "Văn phòng", warehouse: "Kho" };
 
@@ -340,43 +341,14 @@ function ChangePasswordTab() {
 
 /* --- Biểu đồ tổng quan (Admin) --- */
 function AdminChartsTab() {
-  const data = {
-    posts: 1245, users: 892, viewsToday: 15432, convRate: 7.2,
-    byType: [
-      { type: "F&B", value: 38 },
-      { type: "Văn phòng", value: 27 },
-      { type: "Bán lẻ", value: 22 },
-      { type: "Kho bãi", value: 13 },
-    ]
-  };
   return (
     <div style={{ padding: 16 }}>
-      <Row gutter={[16, 16]}>
-        <Col xs={24} md={6}><Card><Statistic title="Tổng bài đăng" value={data.posts} /></Card></Col>
-        <Col xs={24} md={6}><Card><Statistic title="Người dùng" value={data.users} /></Card></Col>
-        <Col xs={24} md={6}><Card><Statistic title="Lượt xem hôm nay" value={data.viewsToday} prefix={<EyeOutlined />} /></Card></Col>
-        <Col xs={24} md={6}><Card><Statistic title="Tỷ lệ chuyển đổi" value={data.convRate} suffix="%" /></Card></Col>
-      </Row>
-      <Card title={<>Cơ cấu loại hình <Tag color="blue"><BarChartOutlined /> demo</Tag></>} style={{ marginTop: 16 }}>
-        <Row gutter={[12, 12]}>
-          {data.byType.map((b) => (
-            <Col xs={24} md={12} lg={6} key={b.type}>
-              <Card size="small">
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <Text strong>{b.type}</Text><Text>{b.value}%</Text>
-                </div>
-                <Progress percent={b.value} showInfo={false} />
-              </Card>
-            </Col>
-          ))}
-        </Row>
-        <Paragraph type="secondary" style={{ marginTop: 8 }}>
-          *Demo – khi nối Superset, nhúng iframe vào đây.
-        </Paragraph>
-      </Card>
+      <AdminAnalytics days={30} />
     </div>
   );
 }
+
+
 
 /* --- Component chính --- */
 export default function Dashboard() {

@@ -16,7 +16,7 @@ import "leaflet/dist/leaflet.css";
 import { getFavoriteCount, addFavorite } from "../utils/favorites";
 
 const { Title, Paragraph, Text } = Typography;
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8089/api";
 const PLACEHOLDER_IMG = "https://picsum.photos/seed/premise/1200/700";
 const PLACEHOLDER_AVATAR = "https://i.pravatar.cc/80?img=1";
 const fmtVND = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });

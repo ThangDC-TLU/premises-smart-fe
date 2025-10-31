@@ -11,7 +11,7 @@ const { Title, Text } = Typography;
 
 const PLACEHOLDER_IMG = "https://picsum.photos/seed/premise/900/600";
 const TYPE_LABEL = { fnb: "F&B", retail: "Bán lẻ", office: "Văn phòng", warehouse: "Kho" };
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8089/api";
 
 const fmtVND = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const currency = (n) => fmtVND.format(Number(n) || 0).replace("₫", "đ/tháng");

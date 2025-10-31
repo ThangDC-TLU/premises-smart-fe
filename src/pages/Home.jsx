@@ -7,7 +7,7 @@ import MapBanner from "../components/MapBanner";
 import { useNavigate } from "react-router-dom";
 
 const { Content } = Layout;
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8089/api";
 const PLACEHOLDER_IMG = "https://picsum.photos/seed/premise/900/600";
 
 function cityFromCoords(lat, lng) {

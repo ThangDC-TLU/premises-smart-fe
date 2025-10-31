@@ -19,7 +19,7 @@ const TYPE_LABEL = {
   office: "Văn phòng",
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8080/api";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8089/api";
 
 export default function ListingList({ title = "Cho thuê mặt bằng kinh doanh" }) {
   const [searchParams, setSearchParams] = useSearchParams();
