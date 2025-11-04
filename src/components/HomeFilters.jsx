@@ -1,25 +1,34 @@
 // src/components/HomeFilters.jsx
 import { useEffect, useMemo, useState } from "react";
-import { Row, Col, Input, Button, Select } from "antd";
+import { Row, Col, Input, Button, Select, InputNumber, Typography } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
-const { Option } = Select;
 
-function niceSteps(min, max, buckets = 6) {
-  if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
-    const v = Number.isFinite(min) ? min : Number.isFinite(max) ? max : 0;
-    return [v];
-  }
-  const span = max - min;
-  const raw = span / (buckets - 1);
-  const pow10 = Math.pow(10, Math.floor(Math.log10(raw)));
-  const mult = raw / pow10;
-  const nice = (mult <= 1 ? 1 : mult <= 2 ? 2 : mult <= 5 ? 5 : 10) * pow10;
-  const start = Math.floor(min / nice) * nice;
-  const end = Math.ceil(max / nice) * nice;
-  const arr = [];
-  for (let x = start; x <= end + 1e-9; x += nice) arr.push(Math.round(x));
-  return arr.slice(0, buckets + 1);
-}
+const { Option } = Select;
+const { Text } = Typography;
+
+// format VND cho InputNumber
+const vndFormatter = (value) => {
+  if (value == null || value === "") return "";
+  const n = String(value).replace(/[^\d-]/g, "");
+  return n ? `${Intl.NumberFormat("vi-VN").format(Number(n))} đ` : "";
+};
+const vndParser = (val) => {
+  if (typeof val !== "string") return val;
+  const n = val.replace(/[^\d-]/g, "");
+  return n ? Number(n) : undefined;
+};
+
+// format m2 cho InputNumber
+const m2Formatter = (value) => {
+  if (value == null || value === "") return "";
+  const n = String(value).replace(/[^\d-]/g, "");
+  return n ? `${n} m²` : "";
+};
+const m2Parser = (val) => {
+  if (typeof val !== "string") return val;
+  const n = val.replace(/[^\d-]/g, "");
+  return n ? Number(n) : undefined;
+};
 
 export default function HomeFilters({ onSearch, data = [] }) {
   const [keyword, setKeyword] = useState("");
@@ -30,50 +39,64 @@ export default function HomeFilters({ onSearch, data = [] }) {
   const [minArea, setMinArea] = useState();
   const [maxArea, setMaxArea] = useState();
 
-  // 🔒 Chỉ cho phép auto search sau khi data đã sẵn sàng ít nhất 1 lần
+  // 🔒 Auto search chỉ sau khi data sẵn sàng lần đầu
   const [ready, setReady] = useState(false);
   useEffect(() => {
     if (data?.length && !ready) {
       setReady(true);
-      onSearch?.({});              // chạy 1 lần để hiển thị toàn bộ ngay khi có data
+      onSearch?.({}); // hiển thị toàn bộ ngay khi có data
     }
   }, [data?.length, ready, onSearch]);
 
-  const { cityOpts, priceOpts, areaOpts } = useMemo(() => {
+  // danh sách city động từ dữ liệu
+  const cityOpts = useMemo(() => {
     const cities = Array.from(new Set(data.map(d => d.cityKey).filter(Boolean)));
-    const cityOpts = cities.map(k => {
+    return cities.map(k => {
       const first = data.find(d => d.cityKey === k);
       return { value: k, label: first?.cityLabel || k };
     });
-    const prices = data.map(d => Number(d.price) || 0);
-    const areas  = data.map(d => Number(d.area_m2) || 0);
-    const pMin = prices.length ? Math.min(...prices) : 0;
-    const pMax = prices.length ? Math.max(...prices) : 0;
-    const aMin = areas.length  ? Math.min(...areas)  : 0;
-    const aMax = areas.length  ? Math.max(...areas)  : 0;
-    return { cityOpts, priceOpts: niceSteps(pMin, pMax, 6), areaOpts: niceSteps(aMin, aMax, 6) };
   }, [data]);
 
-  const fireSearch = () =>
-    onSearch?.({ keyword: keyword?.trim(), type, city, minPrice, maxPrice, minArea, maxArea });
+  const fireSearch = () => {
+    onSearch?.({
+      keyword: keyword?.trim(),
+      type,
+      city,
+      minPrice: Number.isFinite(minPrice) ? minPrice : undefined,
+      maxPrice: Number.isFinite(maxPrice) ? maxPrice : undefined,
+      minArea : Number.isFinite(minArea)  ? minArea  : undefined,
+      maxArea : Number.isFinite(maxArea)  ? maxArea  : undefined,
+    });
+  };
 
-  // debounce keyword, chỉ chạy khi ready
+  // debounce keyword
   useEffect(() => {
     if (!ready) return;
     const t = setTimeout(fireSearch, 300);
     return () => clearTimeout(t);
-  }, [keyword, ready]); // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyword, ready]);
 
-  // tự bắn khi thay đổi các select, chỉ chạy khi ready
+  // tự bắn khi đổi các filter khác
   useEffect(() => {
     if (!ready) return;
     fireSearch();
-  }, [type, city, minPrice, maxPrice, minArea, maxArea, ready]); // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, city, minPrice, maxPrice, minArea, maxArea, ready]);
 
   const resetAll = () => {
     setKeyword(""); setType(); setCity();
     setMinPrice(); setMaxPrice(); setMinArea(); setMaxArea();
     if (ready) onSearch?.({});
+  };
+
+  // helper đảm bảo state là number hoặc undefined
+  const setNum = (setter) => (v) => {
+    if (v === null || v === "" || typeof v === "undefined") setter(undefined);
+    else {
+      const n = Number(v);
+      setter(Number.isFinite(n) ? n : undefined);
+    }
   };
 
   return (
@@ -98,9 +121,15 @@ export default function HomeFilters({ onSearch, data = [] }) {
         </Col>
       </Row>
 
-      <Row gutter={[12, 12]}>
+      <Row gutter={[12, 12]} align="middle">
         <Col>
-          <Select placeholder="Loại hình" style={{ width: 160 }} allowClear value={type} onChange={setType}>
+          <Select
+            placeholder="Loại hình"
+            style={{ width: 160 }}
+            allowClear
+            value={type}
+            onChange={setType}
+          >
             <Option value="retail">Bán lẻ</Option>
             <Option value="office">Văn phòng</Option>
             <Option value="fnb">F&amp;B</Option>
@@ -109,35 +138,93 @@ export default function HomeFilters({ onSearch, data = [] }) {
         </Col>
 
         <Col>
-          <Select placeholder="Địa điểm" style={{ width: 200 }} allowClear value={city} onChange={setCity} notFoundContent="Trống">
-            {cityOpts.map(c => <Option key={c.value} value={c.value}>{c.label}</Option>)}
+          <Select
+            placeholder="Địa điểm"
+            style={{ width: 200 }}
+            allowClear
+            value={city}
+            onChange={setCity}
+            notFoundContent="Trống"
+          >
+            {cityOpts.map(c => (
+              <Option key={c.value} value={c.value}>{c.label}</Option>
+            ))}
           </Select>
         </Col>
 
-        <Col>
-          <Select placeholder="Giá min" style={{ width: 140 }} allowClear value={minPrice} onChange={(v) => setMinPrice(v ?? undefined)}>
-            {priceOpts.map(p => <Option key={`pmin-${p}`} value={p}>{Intl.NumberFormat("vi-VN").format(p)} đ</Option>)}
-          </Select>
+        {/* --------- Giá: nhập tự do --------- */}
+        <Col flex="0 0 320px">
+          <Row gutter={8} align="middle" wrap={false}>
+            <Col flex="84px"><Text type="secondary">Giá từ</Text></Col>
+            <Col flex="auto">
+              <InputNumber
+                style={{ width: "100%" }}
+                placeholder="VD: 5.000.000"
+                value={minPrice}
+                onChange={setNum(setMinPrice)}
+                formatter={vndFormatter}
+                parser={vndParser}
+                min={0}
+              />
+            </Col>
+          </Row>
         </Col>
 
-        <Col>
-          <Select placeholder="Giá max" style={{ width: 140 }} allowClear value={maxPrice} onChange={(v) => setMaxPrice(v ?? undefined)}>
-            {priceOpts.map(p => <Option key={`pmax-${p}`} value={p}>{Intl.NumberFormat("vi-VN").format(p)} đ</Option>)}
-          </Select>
+        <Col flex="0 0 320px">
+          <Row gutter={8} align="middle" wrap={false}>
+            <Col flex="84px"><Text type="secondary">đến</Text></Col>
+            <Col flex="auto">
+              <InputNumber
+                style={{ width: "100%" }}
+                placeholder="VD: 30.000.000"
+                value={maxPrice}
+                onChange={setNum(setMaxPrice)}
+                formatter={vndFormatter}
+                parser={vndParser}
+                min={0}
+              />
+            </Col>
+          </Row>
         </Col>
 
-        <Col>
-          <Select placeholder="DT min" style={{ width: 140 }} allowClear value={minArea} onChange={(v) => setMinArea(v ?? undefined)}>
-            {areaOpts.map(a => <Option key={`amin-${a}`} value={a}>{a} m²</Option>)}
-          </Select>
+        {/* --------- Diện tích: nhập tự do --------- */}
+        <Col flex="0 0 240px">
+          <Row gutter={8} align="middle" wrap={false}>
+            <Col flex="70px"><Text type="secondary">DT từ</Text></Col>
+            <Col flex="auto">
+              <InputNumber
+                style={{ width: "100%" }}
+                placeholder="m²"
+                value={minArea}
+                onChange={setNum(setMinArea)}
+                formatter={m2Formatter}
+                parser={m2Parser}
+                min={0}
+              />
+            </Col>
+          </Row>
         </Col>
 
-        <Col>
-          <Select placeholder="DT max" style={{ width: 140 }} allowClear value={maxArea} onChange={(v) => setMaxArea(v ?? undefined)}>
-            {areaOpts.map(a => <Option key={`amax-${a}`} value={a}>{a} m²</Option>)}
-          </Select>
+        <Col flex="0 0 240px">
+          <Row gutter={8} align="middle" wrap={false}>
+            <Col flex="70px"><Text type="secondary">đến</Text></Col>
+            <Col flex="auto">
+              <InputNumber
+                style={{ width: "100%" }}
+                placeholder="m²"
+                value={maxArea}
+                onChange={setNum(setMaxArea)}
+                formatter={m2Formatter}
+                parser={m2Parser}
+                min={0}
+              />
+            </Col>
+          </Row>
         </Col>
       </Row>
+
+      {/* Gợi ý nhỏ: nếu người dùng nhập ngược, BE/logic onSearch đã swap min/max rồi.
+          Nếu muốn swap ở FE, bạn có thể làm trong fireSearch trước khi gọi onSearch. */}
     </div>
   );
 }

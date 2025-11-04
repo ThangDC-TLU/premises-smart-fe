@@ -1,42 +1,70 @@
+// src/components/TopFavorites.jsx
 import { Card, List, Tag, Empty, Typography } from "antd";
-import { getAllFavorites } from "../utils/favorites";
 import { Link } from "react-router-dom";
+import { getAllFavorites } from "../utils/favorites";
 
 const { Paragraph } = Typography;
 
-/**
- * Props (tuỳ chọn)
- * - getListingMeta?: (id: string) => { title: string, img: string, href?: string }
- *   -> dùng để map id -> thông tin thật từ store/API của bạn.
- */
-export default function TopFavorites({ getListingMeta }) {
-  const top = getAllFavorites().slice(0, 3); // top 5 ❤
+const PLACEHOLDER_IMG =
+  "https://cdn.jsdelivr.net/gh/vanhung4499/cdn-placeholders/placeholder-600x360.png";
 
-  if (top.length === 0) {
+/**
+ * Props (tùy chọn)
+ * - title?: string
+ * - emptyText?: string
+ * - limit?: number
+ * - getListingMeta?: (id: string|number) => { title?: string, img?: string, href?: string }
+ * - onItemClick?: (id: string|number) => void
+ */
+export default function TopFavorites({
+  title = "Nổi bật (yêu thích nhiều)",
+  emptyText = "Chưa có lượt yêu thích",
+  limit = 5,
+  getListingMeta,
+  onItemClick,
+}) {
+  const normalizeFavorites = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) {
+      return raw
+        .filter((x) => x && x.id != null)
+        .map((x) => ({ id: x.id, count: Number(x.count) || 0 }));
+    }
+    return Object.entries(raw).map(([id, count]) => ({
+      id,
+      count: Number(count) || 0,
+    }));
+  };
+
+  const favs = normalizeFavorites(getAllFavorites())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, Math.max(0, limit));
+
+  if (favs.length === 0) {
     return (
-      <Card title="Nổi bật (yêu thích nhiều)">
-        <Empty description="Chưa có lượt yêu thích" />
+      <Card title={title}>
+        <Empty description={emptyText} />
       </Card>
     );
   }
 
   return (
-    <Card title="Nổi bật (yêu thích nhiều)">
+    <Card title={title}>
       <List
         itemLayout="vertical"
-        dataSource={top}
+        dataSource={favs}
         renderItem={(it) => {
-          // Lấy meta thật nếu có, không thì mock để xem UI
           const meta =
-            (typeof getListingMeta === "function" && getListingMeta(it.id)) ||
-            {
-              title: `Mặt bằng nổi bật #${it.id}`,
-              img: `https://picsum.photos/seed/${encodeURIComponent(it.id)}/600/360`,
-              href: `/listing/${it.id}`,
-            };
+            (typeof getListingMeta === "function" && getListingMeta(it.id)) || {};
+          const safeTitle = meta.title || `Mặt bằng #${it.id}`;
+          const safeImg = meta.img || PLACEHOLDER_IMG;
+          const href = meta.href || `/listing/${it.id}`;
 
-          const content = (
-            <>
+          const Content = (
+            <div
+              onClick={() => onItemClick && onItemClick(it.id)}
+              style={{ cursor: onItemClick ? "pointer" : "default" }}
+            >
               <div
                 style={{
                   width: "100%",
@@ -49,24 +77,39 @@ export default function TopFavorites({ getListingMeta }) {
                 }}
               >
                 <img
-                  src={meta.img}
-                  alt={meta.title}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  src={safeImg}
+                  alt={safeTitle}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
                   loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.src = PLACEHOLDER_IMG;
+                  }}
                 />
               </div>
               <Paragraph
                 style={{ marginBottom: 0, fontWeight: 600 }}
-                ellipsis={{ rows: 2, tooltip: meta.title }}
+                ellipsis={{ rows: 2, tooltip: safeTitle }}
               >
-                {meta.title}
+                {safeTitle}
               </Paragraph>
-            </>
+            </div>
           );
 
           return (
-            <List.Item key={it.id} extra={<Tag color="red">❤ {it.count}</Tag>}>
-              {meta.href ? <Link to={meta.href}>{content}</Link> : content}
+            <List.Item
+              key={it.id}
+              extra={
+                <Tag color="red" style={{ fontSize: 12 }}>
+                  ❤ {it.count}
+                </Tag>
+              }
+            >
+              {href ? <Link to={href}>{Content}</Link> : Content}
             </List.Item>
           );
         }}
