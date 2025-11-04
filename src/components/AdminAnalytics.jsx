@@ -260,14 +260,6 @@ export default function AdminAnalytics({ days = 30 }) {
       {/* Hàng 3 */}
       <Row gutter={[12, 12]}>
         <Col xs={24} lg={12}>
-          <Card
-            size="small"
-            title="Top 5 người đăng nhiều nhất (xếp chồng theo loại hình)"
-            loading={loading}
-            bodyStyle={{ padding: 8 }}
-          >
-            <Column {...cfgStackTopUsers} />
-          </Card>
         </Col>
         <Col xs={24} lg={12}>
           <Card size="small" title="Khoảng diện tích theo loại hình (Min/Max)" loading={loading} bodyStyle={{ padding: 8 }}>
