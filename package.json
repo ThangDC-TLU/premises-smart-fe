@@ -12,6 +12,7 @@
   "dependencies": {
     "@ant-design/icons": "^6.1.0",
     "@ant-design/plots": "^2.6.6",
+    "@google/generative-ai": "^0.24.1",
     "@superset-ui/embedded-sdk": "^0.2.0",
     "antd": "^5.27.6",
     "axios": "^1.12.2",

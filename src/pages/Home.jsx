@@ -5,6 +5,7 @@ import ListingGrid from "../components/ListingGrid";
 import TopFavorites from "../components/TopFavorites";
 import MapBanner from "../components/MapBanner";
 import { useNavigate } from "react-router-dom";
+import ChatbotFloating from "../components/ChatbotFloating";
 
 const { Content } = Layout;
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8089/api";
@@ -118,10 +119,23 @@ export default function Home() {
             )}
           </Col>
           <Col xs={24} lg={7} style={{ marginTop: 12 }}>
-            <TopFavorites />
+            <TopFavorites
+              getListingMeta={(id) => {
+                const it = allItems.find((x) => String(x.id) === String(id));
+                if (!it) return null;
+                return {
+                  title: it.title,
+                  // ưu tiên coverImage, sau đó images[0], sau đó field img đã map
+                  img: it.coverImage || it.images?.[0] || it.img,
+                  href: `/listing/${it.id}`,
+                };
+              }}
+            />
+
           </Col>
         </Row>
       </div>
+      <ChatbotFloating />
     </Content>
   );
 }
