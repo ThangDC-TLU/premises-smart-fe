@@ -166,7 +166,7 @@ const LABEL_TO_KEY = {
    Component
 ====================== */
 export default function PostListing() {
-  const [messageApi, contextHolder] = message.useMessage(); // ✅ hook message
+  const [messageApi, contextHolder] = message.useMessage();
   const [step, setStep] = useState(0);
   const [form] = Form.useForm();
   const [fileList, setFileList] = useState([]);
@@ -182,13 +182,6 @@ export default function PostListing() {
   const editId = searchParams.get("edit");
   const isEdit = !!editId;
 
-  const steps = [
-    { title: "Thông tin cơ bản" },
-    { title: "Vị trí" },
-    { title: "Hình ảnh" },
-    { title: "Xem trước & " + (isEdit ? "cập nhật" : "đăng") },
-  ];
-
   // customRequest với messageApi
   const cloudReq = useMemo(() => makeCloudinaryRequest(messageApi), [messageApi]);
 
@@ -202,6 +195,7 @@ export default function PostListing() {
         const res = await fetch(`${API_BASE}/premises/${editId}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const d = await res.json();
+
         const key = LABEL_TO_KEY[String(d.businessType || "").toLowerCase().trim()] || d.businessType || "fnb";
 
         const imgs = Array.isArray(d.images) ? d.images : [];
@@ -221,8 +215,9 @@ export default function PostListing() {
             area_m2: d.area_m2,
             businessType: key,
             description: d.description,
-            locationText: d.address || "",
-            locationQuery: d.address || "",
+            // ✅ FIX: fill đúng từ backend
+            locationText: d.locationText || d.address || "",
+            locationQuery: d.locationText || d.address || "",
             lat: lat ?? undefined,
             lng: lng ?? undefined,
           });
@@ -236,11 +231,19 @@ export default function PostListing() {
     return () => (aborted = true);
   }, [isEdit, editId, form, messageApi]);
 
+  // đồng bộ lat/lng ban đầu nếu có
   useEffect(() => {
     const lat = form.getFieldValue("lat");
     const lng = form.getFieldValue("lng");
     if (lat && lng) setLatLng({ lat: Number(lat), lng: Number(lng) });
   }, []);
+
+  const steps = [
+    { title: "Thông tin cơ bản" },
+    { title: "Vị trí" },
+    { title: "Hình ảnh" },
+    { title: "Xem trước & " + (isEdit ? "cập nhật" : "đăng") },
+  ];
 
   const next = async () => {
     try {
@@ -291,7 +294,7 @@ export default function PostListing() {
   };
 
   const submit = async () => {
-    const MSG_KEY = "saveListing"; // dùng key để chuyển trạng thái message
+    const MSG_KEY = "saveListing";
     try {
       await form.validateFields();
       const values = form.getFieldsValue(true);
@@ -356,7 +359,6 @@ export default function PostListing() {
         await messageApi.open({ key: MSG_KEY, type: "success", content: "Đăng tin thành công!", duration: 1.2 });
       }
 
-      // cho user thấy message xong mới điều hướng
       setTimeout(() => nav("/", { replace: true }), 400);
     } catch (err) {
       const msg =
@@ -375,7 +377,7 @@ export default function PostListing() {
 
   return (
     <div style={{ maxWidth: 1000, margin: "16px auto", padding: "0 16px" }}>
-      {contextHolder}{/* ✅ BẮT BUỘC để hiển thị message */}
+      {contextHolder}
       <Title level={3} style={{ marginBottom: 12 }}>
         {isEdit ? "Cập nhật tin mặt bằng" : "Đăng tin mặt bằng"}
       </Title>
