@@ -2,13 +2,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
-  Row, Col, Card, Breadcrumb, Typography, Tag, Rate, Space, Button, Divider,
+  Row, Col, Card, Breadcrumb, Typography, Tag, Space, Button, Divider,
   Carousel, Descriptions, Avatar, List, Skeleton, Modal, Form, Input, message
 } from "antd";
 import {
   HomeOutlined, EnvironmentOutlined, TagOutlined, AreaChartOutlined,
   PhoneOutlined, MessageOutlined, ShareAltOutlined, ThunderboltOutlined,
-  HeartOutlined, HeartFilled, LoadingOutlined
+  HeartOutlined, HeartFilled, LoadingOutlined, CalendarOutlined
 } from "@ant-design/icons";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -25,6 +25,17 @@ const PLACEHOLDER_AVATAR = "https://i.pravatar.cc/80?img=1";
 
 const fmtVND = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const currency = (n) => fmtVND.format(Number(n) || 0).replace("₫", "đ/tháng");
+
+// ---- format ngày: 2025-10-31T15:05:55.220408Z -> 31/10/2025
+function formatVNDate(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return "";
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const yyyy = dt.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
 
 const markerIcon = new L.Icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -46,7 +57,6 @@ function Recenter({ lat, lng }) {
   return null;
 }
 
-/** Panel hiển thị kết quả dự đoán – gọn, không chồng chữ */
 function PricePanel({ loading, error, res, listing }) {
   const meta = res?.model_info?.metrics || {};
   const trainedAt = res?.model_info?.trained_at?.slice(0, 10);
@@ -55,7 +65,6 @@ function PricePanel({ loading, error, res, listing }) {
   if (error) return <Text type="danger">{error}</Text>;
   if (!res) return <Text type="secondary">Chưa có dữ liệu dự đoán.</Text>;
 
-  // chênh lệch so với giá đang đăng (nếu có)
   const diffTag = useMemo(() => {
     if (!listing?.price || !res?.predicted_price) return null;
     const diff = listing.price - res.predicted_price;
@@ -74,16 +83,7 @@ function PricePanel({ loading, error, res, listing }) {
         <Row gutter={[16, 16]} align="middle">
           <Col xs={24} md={10}>
             <div style={{ color: "#8c8c8c", marginBottom: 4 }}>Giá đề xuất</div>
-            <div
-              style={{
-                fontWeight: 700,
-                fontSize: 28,
-                lineHeight: 1.2,
-                letterSpacing: 0.2,
-                wordBreak: "keep-all",
-                overflowWrap: "anywhere",
-              }}
-            >
+            <div style={{ fontWeight: 700, fontSize: 28, lineHeight: 1.2, letterSpacing: 0.2 }}>
               {currency(res.predicted_price)}
             </div>
           </Col>
@@ -123,7 +123,6 @@ export default function ListingDetail() {
   const [favCount, setFavCount] = useState(0);
   const [form] = Form.useForm();
 
-  // state cho dự đoán
   const [predictLoading, setPredictLoading] = useState(false);
   const [predictErr, setPredictErr] = useState("");
   const [predictRes, setPredictRes] = useState(null);
@@ -151,10 +150,12 @@ export default function ListingDetail() {
           images: Array.isArray(json.images) && json.images.length ? json.images : [json.coverImage || PLACEHOLDER_IMG],
           amenities: Array.isArray(json.amenities) ? json.amenities : [],
           owner: json.owner || { name: "Chủ tin", phone: "", avatar: null },
-          rating: Number(json.rating) || 0,
           price: Number(json.price) || 0,
           latitude: Number(json.latitude ?? json.lat ?? NaN),
           longitude: Number(json.longitude ?? json.lng ?? NaN),
+          // ngày đăng / cập nhật
+          createdAt: json.createdAt || json.created_at || null,
+          updatedAt: json.updatedAt || json.updated_at || null,
         };
 
         if (!aborted) {
@@ -176,7 +177,6 @@ export default function ListingDetail() {
     return () => { aborted = true; ctrl.abort(); };
   }, [id]);
 
-  // gọi API ML /predict
   async function openPredict() {
     setPredictOpen(true);
     setPredictErr("");
@@ -224,9 +224,10 @@ export default function ListingDetail() {
     );
   }
 
+  const postedDate = formatVNDate(data.createdAt || data.updatedAt);
+
   return (
     <div style={{ maxWidth: 1200, margin: "16px auto", padding: "0 16px" }}>
-      {/* Breadcrumb */}
       <Breadcrumb
         items={[
           { title: <Link to="/"><HomeOutlined /> Trang chủ</Link> },
@@ -261,12 +262,13 @@ export default function ListingDetail() {
                 <Tag icon={<TagOutlined />}>{data.businessType}</Tag>
                 <Tag icon={<EnvironmentOutlined />}>{data.address}</Tag>
               </Space>
-              <div style={{ marginTop: 8 }}>
-                <Rate allowHalf disabled defaultValue={data.rating} />
-                <Text type="secondary" style={{ marginLeft: 8 }}>
-                  {data.rating} {data.createdAt ? `· Đăng ngày ${data.createdAt}` : ""}
-                </Text>
-              </div>
+
+              {/* dòng meta – KHÔNG còn sao; chỉ ngày đăng nếu có */}
+              {postedDate && (
+                <div style={{ marginTop: 8, color: "#8c8c8c", display: "flex", alignItems: "center", gap: 6 }}>
+                  <CalendarOutlined /> <span>Đăng ngày {postedDate}</span>
+                </div>
+              )}
             </div>
 
             <Divider />
@@ -274,7 +276,7 @@ export default function ListingDetail() {
             <Title level={4}>Mô tả</Title>
             <Paragraph>{data.description}</Paragraph>
 
-            {data.amenities.length > 0 && (
+            {Array.isArray(data.amenities) && data.amenities.length > 0 && (
               <>
                 <Title level={4} style={{ marginTop: 16 }}>Tiện ích</Title>
                 <Space size={[8, 8]} wrap>
@@ -419,7 +421,7 @@ export default function ListingDetail() {
         </Form>
       </Modal>
 
-      {/* Modal dự đoán giá – giao diện mới */}
+      {/* Modal dự đoán giá */}
       <Modal
         title="Dự đoán giá"
         open={predictOpen}
@@ -427,12 +429,7 @@ export default function ListingDetail() {
         footer={<Button onClick={() => setPredictOpen(false)}>Đóng</Button>}
         destroyOnClose
       >
-        <PricePanel
-          loading={predictLoading}
-          error={predictErr}
-          res={predictRes}
-          listing={data}
-        />
+        <PricePanel loading={predictLoading} error={predictErr} res={predictRes} listing={data} />
       </Modal>
     </div>
   );

@@ -1,3 +1,4 @@
+// src/pages/Home.jsx
 import { useEffect, useState } from "react";
 import { Layout, Row, Col, Skeleton, message } from "antd";
 import HomeFilters from "../components/HomeFilters";
@@ -29,29 +30,44 @@ export default function Home() {
   useEffect(() => {
     let aborted = false;
     const ctrl = new AbortController();
+
     (async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_BASE}/premises`, { signal: ctrl.signal });
+        const res = await fetch(`${API_BASE}/premises`, {
+          signal: ctrl.signal,
+          headers: { Accept: "application/json" },
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
 
         const mapped = (Array.isArray(data) ? data : []).map((p) => {
           const lat = Number(p.latitude);
           const lng = Number(p.longitude);
-          const city = (Number.isFinite(lat) && Number.isFinite(lng))
+          const city = Number.isFinite(lat) && Number.isFinite(lng)
             ? cityFromCoords(lat, lng)
             : { key: "khac", label: "Khác" };
+
+          const typeKey = (p.businessType || "khac").toString().toLowerCase().trim();
+          const cover = p.coverImage || (Array.isArray(p.images) && p.images[0]) || PLACEHOLDER_IMG;
+
           return {
             id: p.id,
             title: p.title || "Không có tiêu đề",
             price: Number(p.price) || 0,
             area_m2: Number(p.areaM2) || 0,
-            businessType: (p.businessType || "khac").toLowerCase(),
+            businessType: typeKey,                     // dùng key để lọc
             address: p.locationText || city.label,
-            img: p.coverImage || (p.images?.[0]) || PLACEHOLDER_IMG,
+            img: cover,                                // ảnh hiển thị mặc định
             cityKey: city.key,
             cityLabel: city.label,
+
+            // giữ nguyên để TopFavorites/Listings có thể dùng
+            coverImage: p.coverImage || null,
+            images: Array.isArray(p.images) ? p.images : [],
+            createdAt: p.createdAt || null,
+            updatedAt: p.updatedAt || null,
+            _raw: p,
           };
         });
 
@@ -65,15 +81,15 @@ export default function Home() {
         if (!aborted) setLoading(false);
       }
     })();
+
     return () => { aborted = true; ctrl.abort(); };
   }, []);
 
-  // áp dụng lọc – có hoán đổi min/max nếu người dùng chọn ngược
+  // áp dụng lọc – hoán đổi min/max nếu người dùng nhập ngược
   const handleSearch = (params = {}) => {
     let { keyword, type, city, minPrice, maxPrice, minArea, maxArea } = params;
     const kw = (keyword || "").toLowerCase();
 
-    // swap min/max khi người dùng chọn ngược
     if (Number.isFinite(minPrice) && Number.isFinite(maxPrice) && minPrice > maxPrice) {
       [minPrice, maxPrice] = [maxPrice, minPrice];
     }
@@ -88,7 +104,7 @@ export default function Home() {
         it.address.toLowerCase().includes(kw) ||
         it.businessType.toLowerCase().includes(kw);
 
-      const okType = !type || it.businessType === type;
+      const okType = !type || it.businessType === type; // type là key (fnb/retail/office…)
       const okCity = !city || it.cityKey === city;
       const okMinP = !Number.isFinite(minPrice) || it.price >= Number(minPrice);
       const okMaxP = !Number.isFinite(maxPrice) || it.price <= Number(maxPrice);
@@ -118,6 +134,7 @@ export default function Home() {
               <ListingGrid items={items} pageSize={8} title="Cho thuê mặt bằng kinh doanh" />
             )}
           </Col>
+
           <Col xs={24} lg={7} style={{ marginTop: 12 }}>
             <TopFavorites
               getListingMeta={(id) => {
@@ -125,16 +142,16 @@ export default function Home() {
                 if (!it) return null;
                 return {
                   title: it.title,
-                  // ưu tiên coverImage, sau đó images[0], sau đó field img đã map
-                  img: it.coverImage || it.images?.[0] || it.img,
+                  // ưu tiên coverImage → images[0] → img đã map
+                  img: it.coverImage || it.images?.[0] || it.img || PLACEHOLDER_IMG,
                   href: `/listing/${it.id}`,
                 };
               }}
             />
-
           </Col>
         </Row>
       </div>
+
       <ChatbotFloating />
     </Content>
   );

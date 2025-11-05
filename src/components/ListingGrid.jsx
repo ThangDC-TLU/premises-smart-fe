@@ -4,7 +4,7 @@ import {
   Row, Col, Card, Tag, Typography, Pagination, Space,
   Empty, Skeleton, message
 } from "antd";
-import { EnvironmentOutlined, AreaChartOutlined } from "@ant-design/icons";
+import { EnvironmentOutlined, AreaChartOutlined, CalendarOutlined } from "@ant-design/icons";
 import { Link } from "react-router-dom";
 
 const { Title, Text } = Typography;
@@ -15,6 +15,21 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8089/api";
 
 const fmtVND = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const currency = (n) => fmtVND.format(Number(n) || 0).replace("₫", "đ/tháng");
+
+// Định dạng dd/mm/yyyy (nếu createdAt hợp lệ)
+function formatDateVN(v) {
+  if (!v) return null;
+  try {
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return null;
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * ListingGrid
@@ -71,6 +86,7 @@ export default function ListingGrid({
             businessType,                 // label hiển thị
             address: p.locationText || "",
             img: cover,
+            createdAt: p.createdAt || p.updatedAt || null, // <-- lấy ngày đăng
           };
         });
 
@@ -125,48 +141,55 @@ export default function ListingGrid({
       ) : (
         <>
           <Row gutter={[16, 16]} style={{ marginTop: 12 }}>
-            {pageData.map((it) => (
-              <Col xs={24} sm={12} lg={8} xl={6} key={it.id}>
-                <Card
-                  hoverable
-                  cover={
+            {pageData.map((it) => {
+              const dateLabel = formatDateVN(it.createdAt);
+              return (
+                <Col xs={24} sm={12} lg={8} xl={6} key={it.id}>
+                  <Card
+                    hoverable
+                    cover={
+                      <Link to={`/listing/${it.id}`}>
+                        <img
+                          src={it.img}
+                          alt={it.title}
+                          style={{ width: "100%", height: 160, objectFit: "cover" }}
+                          onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
+                          loading="lazy"
+                        />
+                      </Link>
+                    }
+                  >
                     <Link to={`/listing/${it.id}`}>
-                      <img
-                        src={it.img}
-                        alt={it.title}
-                        style={{ width: "100%", height: 160, objectFit: "cover" }}
-                        onError={(e) => { e.currentTarget.src = PLACEHOLDER_IMG; }}
-                        loading="lazy"
-                      />
+                      <Title level={5} style={{
+                        marginBottom: 6,
+                        minHeight: 44,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}>
+                        {it.title}
+                      </Title>
                     </Link>
-                  }
-                >
-                  <Link to={`/listing/${it.id}`}>
-                    <Title level={5} style={{
-                      marginBottom: 6,
-                      minHeight: 44,
-                      display: "-webkit-box",
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: "vertical",
-                      overflow: "hidden",
-                    }}>
-                      {it.title}
-                    </Title>
-                  </Link>
 
-                  <Space wrap size="small" style={{ marginBottom: 6 }}>
-                    <Tag color="red">{currency(it.price)}</Tag>
-                    <Tag icon={<AreaChartOutlined />}>{it.area_m2} m²</Tag>
-                    {/* Nếu parent đã cung cấp label rồi thì dùng luôn */}
-                    <Tag>{TYPE_LABEL[it.businessType] || it.businessType}</Tag>
-                  </Space>
+                    <Space wrap size="small" style={{ marginBottom: 6 }}>
+                      <Tag color="red">{currency(it.price)}</Tag>
+                      <Tag icon={<AreaChartOutlined />}>{it.area_m2} m²</Tag>
+                      <Tag>{TYPE_LABEL[it.businessType] || it.businessType}</Tag>
+                    </Space>
 
-                  <div style={{ color: "#8c8c8c" }}>
-                    <EnvironmentOutlined /> {it.address}
-                  </div>
-                </Card>
-              </Col>
-            ))}
+                    <div style={{ color: "#8c8c8c", display: "flex", flexDirection: "column", gap: 4 }}>
+                      <span><EnvironmentOutlined /> {it.address}</span>
+                      {dateLabel && (
+                        <Text type="secondary" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <CalendarOutlined /> Đăng ngày {dateLabel}
+                        </Text>
+                      )}
+                    </div>
+                  </Card>
+                </Col>
+              );
+            })}
           </Row>
 
           <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
